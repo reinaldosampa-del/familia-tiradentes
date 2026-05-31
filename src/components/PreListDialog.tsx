@@ -213,7 +213,15 @@ function PreItemRow({
 
   return (
     <li className={`flex items-center gap-2 rounded-2xl px-2 py-2 ${ring}`}>
-      <Circle className={`h-3 w-3 shrink-0 ${dot}`} />
+      <button
+        type="button"
+        onClick={() => matchId && onJump(matchId)}
+        disabled={!matchId}
+        aria-label={matchId ? "Mostrar item na lista" : "Sem correspondência"}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full hover:bg-background/60 disabled:cursor-default"
+      >
+        <Circle className={`h-3.5 w-3.5 ${dot}`} />
+      </button>
       <Input
         inputMode="decimal"
         value={qty}
@@ -224,15 +232,6 @@ function PreItemRow({
         placeholder="1"
         className="h-10 w-14 shrink-0 rounded-xl px-2 text-center text-base tabular-nums"
       />
-      <button
-        type="button"
-        onClick={() => matchId && onJump(matchId)}
-        disabled={!matchId}
-        className="min-w-0 flex-1 truncate rounded-xl px-2 py-1 text-left text-sm font-medium text-foreground hover:bg-muted/60 disabled:cursor-default disabled:hover:bg-transparent"
-        title={matchId ? "Mostrar item na lista" : ""}
-      >
-        {name || <span className="text-muted-foreground">sem nome</span>}
-      </button>
       <Input
         value={name}
         onChange={(e) => {
@@ -240,7 +239,7 @@ function PreItemRow({
           persist({ name: e.target.value.slice(0, 120) });
         }}
         placeholder="produto"
-        className="h-10 min-w-[100px] flex-1 rounded-xl text-base"
+        className="h-10 min-w-0 flex-1 rounded-xl text-base"
       />
       <button
         onClick={() => remove.mutate()}
