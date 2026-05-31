@@ -82,9 +82,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "author", content: "Lovable" },
       { name: "theme-color", content: "#22c55e" },
       { property: "og:title", content: "Lista de Compras" },
-      { property: "og:description", content: "Lista de compras compartilhada em tempo real." },
+      { property: "og:description", content: "Lista de compras compartilhada em tempo real para a família." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "Lista de Compras" },
+      { name: "twitter:description", content: "Lista de compras compartilhada em tempo real para a família." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7b8f9fb9-d2cb-4298-9a20-3269504a44f5/id-preview-917dfeae--929c59d1-1292-496b-a32c-709f78b31709.lovable.app-1780258706262.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7b8f9fb9-d2cb-4298-9a20-3269504a44f5/id-preview-917dfeae--929c59d1-1292-496b-a32c-709f78b31709.lovable.app-1780258706262.png" },
     ],
     links: [
       {
