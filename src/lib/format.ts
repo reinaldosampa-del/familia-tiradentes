@@ -26,3 +26,12 @@ export function parseNumber(input: string): number {
   const n = parseFloat(cleaned);
   return isNaN(n) ? 0 : n;
 }
+
+export function normalizeName(s: string): string {
+  return (s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
