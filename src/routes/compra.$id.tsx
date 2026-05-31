@@ -307,6 +307,15 @@ function PurchaseHeader({
             </p>
           </div>
 
+          <button
+            onClick={onOpenPreList}
+            className="flex h-10 items-center gap-1.5 rounded-full bg-primary/10 px-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/20"
+            aria-label="Abrir pré-lista"
+          >
+            <ListChecks className="h-4 w-4" />
+            Pré-lista
+          </button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
