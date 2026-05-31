@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, MoreVertical, Plus, Trash2, Pencil } from "lucide-react";
+import { ArrowLeft, MoreVertical, Plus, Trash2, Pencil, ListChecks } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
+import { PreListDialog } from "@/components/PreListDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
