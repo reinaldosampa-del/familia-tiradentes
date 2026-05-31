@@ -55,12 +55,14 @@ function HomePage() {
     );
   }
 
-  return <PurchasesScreen profileName={profile.name} profileIcon={profile.icon}>
-    <ProfileBadge profile={profile} onUpdate={(d) => update.mutateAsync(d)} />
-  </PurchasesScreen>;
+  return (
+    <PurchasesScreen>
+      <ProfileBadge profile={profile} onUpdate={(d) => update.mutateAsync(d)} />
+    </PurchasesScreen>
+  );
 }
 
-function PurchasesScreen({ children }: { profileName: string; profileIcon: string; children: React.ReactNode }) {
+function PurchasesScreen({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
 
