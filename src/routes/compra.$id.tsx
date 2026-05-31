@@ -127,6 +127,19 @@ function PurchaseDetailPage() {
     onSuccess: () => router.navigate({ to: "/" }),
   });
 
+  const [preOpen, setPreOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const itemRefs = useRef<Record<string, HTMLLIElement | null>>({});
+
+  const jumpToItem = (itemId: string) => {
+    const el = itemRefs.current[itemId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    setHighlightId(itemId);
+    window.setTimeout(() => setHighlightId((cur) => (cur === itemId ? null : cur)), 2200);
+  };
+
   if (isLoading || !purchase) {
     return (
       <div className="flex min-h-dvh items-center justify-center">
@@ -141,6 +154,7 @@ function PurchaseDetailPage() {
         purchase={purchase}
         total={total}
         onDelete={() => deletePurchase.mutate()}
+        onOpenPreList={() => setPreOpen(true)}
       />
 
       <main className="flex-1 overflow-auto">
@@ -160,7 +174,15 @@ function PurchaseDetailPage() {
           ) : (
             <ul className="space-y-2">
               {items.map((item) => (
-                <ItemRow key={item.id} item={item} purchaseId={id} />
+                <ItemRow
+                  key={item.id}
+                  item={item}
+                  purchaseId={id}
+                  highlighted={highlightId === item.id}
+                  rowRef={(el) => {
+                    itemRefs.current[item.id] = el;
+                  }}
+                />
               ))}
             </ul>
           )}
