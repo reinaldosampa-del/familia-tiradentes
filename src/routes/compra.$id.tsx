@@ -550,7 +550,14 @@ function ItemRow({
     (parseNumber(qty) || 0) * (parseNumber(price) || 0);
 
   return (
-    <li className="flex items-center gap-2 rounded-2xl border border-border bg-card px-2 py-2 shadow-sm">
+    <li
+      ref={rowRef}
+      className={`flex items-center gap-2 rounded-2xl border bg-card px-2 py-2 shadow-sm transition-all ${
+        highlighted
+          ? "border-primary ring-2 ring-primary/40 scale-[1.01]"
+          : "border-border"
+      }`}
+    >
       <Input
         data-item-id={item.id + ":qty"}
         inputMode="decimal"
