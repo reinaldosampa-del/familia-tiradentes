@@ -491,7 +491,17 @@ function EditPurchaseDialog({
   );
 }
 
-function ItemRow({ item, purchaseId }: { item: Item; purchaseId: string }) {
+function ItemRow({
+  item,
+  purchaseId,
+  highlighted,
+  rowRef,
+}: {
+  item: Item;
+  purchaseId: string;
+  highlighted?: boolean;
+  rowRef?: (el: HTMLLIElement | null) => void;
+}) {
   const qc = useQueryClient();
 
   const [qty, setQty] = useState(
