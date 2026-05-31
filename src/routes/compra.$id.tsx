@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, MoreVertical, Plus, Trash2, Pencil } from "lucide-react";
+import { ArrowLeft, MoreVertical, Plus, Trash2, Pencil, ListChecks } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
+import { PreListDialog } from "@/components/PreListDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,6 +127,19 @@ function PurchaseDetailPage() {
     onSuccess: () => router.navigate({ to: "/" }),
   });
 
+  const [preOpen, setPreOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const itemRefs = useRef<Record<string, HTMLLIElement | null>>({});
+
+  const jumpToItem = (itemId: string) => {
+    const el = itemRefs.current[itemId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    setHighlightId(itemId);
+    window.setTimeout(() => setHighlightId((cur) => (cur === itemId ? null : cur)), 2200);
+  };
+
   if (isLoading || !purchase) {
     return (
       <div className="flex min-h-dvh items-center justify-center">
@@ -140,6 +154,7 @@ function PurchaseDetailPage() {
         purchase={purchase}
         total={total}
         onDelete={() => deletePurchase.mutate()}
+        onOpenPreList={() => setPreOpen(true)}
       />
 
       <main className="flex-1 overflow-auto">
@@ -159,7 +174,15 @@ function PurchaseDetailPage() {
           ) : (
             <ul className="space-y-2">
               {items.map((item) => (
-                <ItemRow key={item.id} item={item} purchaseId={id} />
+                <ItemRow
+                  key={item.id}
+                  item={item}
+                  purchaseId={id}
+                  highlighted={highlightId === item.id}
+                  rowRef={(el) => {
+                    itemRefs.current[item.id] = el;
+                  }}
+                />
               ))}
             </ul>
           )}
@@ -200,6 +223,14 @@ function PurchaseDetailPage() {
           </div>
         </div>
       </footer>
+
+      <PreListDialog
+        open={preOpen}
+        onOpenChange={setPreOpen}
+        purchaseId={id}
+        items={items.map((it) => ({ id: it.id, name: it.name, quantity: it.quantity }))}
+        onJumpToItem={jumpToItem}
+      />
     </div>
   );
 }
@@ -208,10 +239,12 @@ function PurchaseHeader({
   purchase,
   total,
   onDelete,
+  onOpenPreList,
 }: {
   purchase: Purchase;
   total: number;
   onDelete: () => void;
+  onOpenPreList: () => void;
 }) {
   const qc = useQueryClient();
   const Icon = getIcon(purchase.icon);
@@ -273,6 +306,15 @@ function PurchaseHeader({
               Itens: {formatBRL(total)}
             </p>
           </div>
+
+          <button
+            onClick={onOpenPreList}
+            className="flex h-10 items-center gap-1.5 rounded-full bg-primary/10 px-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/20"
+            aria-label="Abrir pré-lista"
+          >
+            <ListChecks className="h-4 w-4" />
+            Pré-lista
+          </button>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -449,7 +491,17 @@ function EditPurchaseDialog({
   );
 }
 
-function ItemRow({ item, purchaseId }: { item: Item; purchaseId: string }) {
+function ItemRow({
+  item,
+  purchaseId,
+  highlighted,
+  rowRef,
+}: {
+  item: Item;
+  purchaseId: string;
+  highlighted?: boolean;
+  rowRef?: (el: HTMLLIElement | null) => void;
+}) {
   const qc = useQueryClient();
 
   const [qty, setQty] = useState(
@@ -498,7 +550,14 @@ function ItemRow({ item, purchaseId }: { item: Item; purchaseId: string }) {
     (parseNumber(qty) || 0) * (parseNumber(price) || 0);
 
   return (
-    <li className="flex items-center gap-2 rounded-2xl border border-border bg-card px-2 py-2 shadow-sm">
+    <li
+      ref={rowRef}
+      className={`flex items-center gap-2 rounded-2xl border bg-card px-2 py-2 shadow-sm transition-all ${
+        highlighted
+          ? "border-primary ring-2 ring-primary/40 scale-[1.01]"
+          : "border-border"
+      }`}
+    >
       <Input
         data-item-id={item.id + ":qty"}
         inputMode="decimal"
