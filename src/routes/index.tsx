@@ -139,7 +139,7 @@ function PurchasesScreen({ children }: { profileName: string; profileIcon: strin
       <CreatePurchaseDialog
         open={creating}
         onOpenChange={setCreating}
-        onCreate={(d) => createPurchase.mutateAsync(d)}
+        onCreate={async (d) => { await createPurchase.mutateAsync(d); }}
       />
     </div>
   );
