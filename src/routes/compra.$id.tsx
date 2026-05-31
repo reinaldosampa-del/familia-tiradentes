@@ -1,0 +1,546 @@
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, MoreVertical, Plus, Trash2, Pencil } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useRealtime } from "@/hooks/useRealtime";
+import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { IconPicker } from "@/components/IconPicker";
+import { PURCHASE_ICONS } from "@/lib/icons";
+import { getIcon } from "@/lib/icons";
+import { formatBRL, formatShortDate, parseNumber } from "@/lib/format";
+
+export const Route = createFileRoute("/compra/$id")({
+  head: () => ({
+    meta: [
+      { title: "Compra — Lista de Compras" },
+      { name: "description", content: "Detalhes da compra com itens e total automático." },
+    ],
+  }),
+  component: PurchaseDetailPage,
+  errorComponent: ({ error }) => (
+    <div className="flex min-h-dvh items-center justify-center p-6 text-center">
+      <div>
+        <p className="text-sm text-destructive">Erro ao carregar: {error.message}</p>
+        <Link to="/" className="mt-4 inline-block text-sm text-primary underline">
+          Voltar
+        </Link>
+      </div>
+    </div>
+  ),
+  notFoundComponent: () => (
+    <div className="flex min-h-dvh items-center justify-center">
+      <p className="text-sm text-muted-foreground">Compra não encontrada.</p>
+    </div>
+  ),
+});
+
+type Purchase = {
+  id: string;
+  name: string;
+  icon: string;
+  budget: number;
+  date: string;
+};
+
+type Item = {
+  id: string;
+  purchase_id: string;
+  quantity: number;
+  name: string;
+  price: number;
+  position: number;
+};
+
+function PurchaseDetailPage() {
+  const { id } = Route.useParams();
+  const router = useRouter();
+  const qc = useQueryClient();
+
+  useRealtime(`purchase-${id}`, "purchases", [["purchase", id]], `id=eq.${id}`);
+  useRealtime(`items-${id}`, "purchase_items", [["items", id]], `purchase_id=eq.${id}`);
+
+  const { data: purchase, isLoading } = useQuery({
+    queryKey: ["purchase", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("purchases")
+        .select("id, name, icon, budget, date")
+        .eq("id", id)
+        .maybeSingle();
+      if (error) throw error;
+      return data as Purchase | null;
+    },
+  });
+
+  const { data: items = [] } = useQuery({
+    queryKey: ["items", id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("purchase_items")
+        .select("id, purchase_id, quantity, name, price, position")
+        .eq("purchase_id", id)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as Item[];
+    },
+  });
+
+  const total = useMemo(
+    () => items.reduce((acc, it) => acc + (it.quantity || 0) * (it.price || 0), 0),
+    [items],
+  );
+
+  const addItem = useMutation({
+    mutationFn: async () => {
+      const position = items.length;
+      const { error } = await supabase
+        .from("purchase_items")
+        .insert({ purchase_id: id, quantity: 1, name: "", price: 0, position });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["items", id] }),
+  });
+
+  const deletePurchase = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("purchases").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => router.navigate({ to: "/" }),
+  });
+
+  if (isLoading || !purchase) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center">
+        <p className="text-sm text-muted-foreground">Carregando...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-dvh flex-col bg-background">
+      <PurchaseHeader
+        purchase={purchase}
+        total={total}
+        onDelete={() => deletePurchase.mutate()}
+      />
+
+      <main className="flex-1 overflow-auto">
+        <div className="mx-auto max-w-4xl px-3 py-3">
+          <div className="sticky top-0 z-[1] mb-2 flex items-center gap-2 rounded-xl bg-muted/70 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
+            <div className="w-16 shrink-0">Qtd</div>
+            <div className="min-w-[200px] flex-1">Produto</div>
+            <div className="w-28 shrink-0 text-right">Valor</div>
+            <div className="w-28 shrink-0 text-right">Subtotal</div>
+            <div className="w-9 shrink-0" />
+          </div>
+
+          {items.length === 0 ? (
+            <p className="py-12 text-center text-sm text-muted-foreground">
+              Nenhum item ainda. Toque em + para adicionar.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {items.map((item) => (
+                <ItemRow key={item.id} item={item} purchaseId={id} />
+              ))}
+            </ul>
+          )}
+
+          <button
+            onClick={() => addItem.mutate()}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-card/50 py-4 text-sm font-medium text-muted-foreground transition-all hover:border-primary hover:text-primary active:scale-[0.99]"
+          >
+            <Plus className="h-5 w-5" />
+            Adicionar item
+          </button>
+
+          <div className="h-24" />
+        </div>
+      </main>
+
+      <footer className="border-t border-border bg-card shadow-[0_-4px_16px_rgba(0,0,0,0.04)]">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Total da compra
+            </p>
+            <p className="text-2xl font-bold tabular-nums text-foreground">
+              {formatBRL(total)}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Restante
+            </p>
+            <p
+              className={`text-lg font-semibold tabular-nums ${
+                purchase.budget - total < 0 ? "text-destructive" : "text-success"
+              }`}
+            >
+              {formatBRL(purchase.budget - total)}
+            </p>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function PurchaseHeader({
+  purchase,
+  total,
+  onDelete,
+}: {
+  purchase: Purchase;
+  total: number;
+  onDelete: () => void;
+}) {
+  const qc = useQueryClient();
+  const Icon = getIcon(purchase.icon);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+
+  const [budgetText, setBudgetText] = useState(
+    purchase.budget ? String(purchase.budget).replace(".", ",") : "",
+  );
+  const [dateText, setDateText] = useState(purchase.date);
+
+  useEffect(() => {
+    setBudgetText(purchase.budget ? String(purchase.budget).replace(".", ",") : "");
+  }, [purchase.budget]);
+  useEffect(() => {
+    setDateText(purchase.date);
+  }, [purchase.date]);
+
+  const saveBudget = useDebouncedCallback(async (value: string) => {
+    const num = parseNumber(value);
+    const { error } = await supabase
+      .from("purchases")
+      .update({ budget: num, updated_at: new Date().toISOString() })
+      .eq("id", purchase.id);
+    if (!error) qc.invalidateQueries({ queryKey: ["purchase", purchase.id] });
+  }, 350);
+
+  const saveDate = async (value: string) => {
+    if (!value) return;
+    const { error } = await supabase
+      .from("purchases")
+      .update({ date: value, updated_at: new Date().toISOString() })
+      .eq("id", purchase.id);
+    if (!error) qc.invalidateQueries({ queryKey: ["purchase", purchase.id] });
+  };
+
+  return (
+    <header className="border-b border-border bg-card">
+      <div className="mx-auto max-w-4xl px-3 py-3">
+        <div className="flex items-center gap-2">
+          <Link
+            to="/"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-foreground transition-colors hover:bg-muted"
+            aria-label="Voltar"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
+
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+            <Icon className="h-5 w-5" />
+          </span>
+
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-bold leading-tight text-foreground">
+              {purchase.name || "Sem nome"}
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              Itens: {formatBRL(total)}
+            </p>
+          </div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex h-10 w-10 items-center justify-center rounded-full transition-colors hover:bg-muted"
+                aria-label="Opções"
+              >
+                <MoreVertical className="h-5 w-5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="rounded-2xl">
+              <DropdownMenuItem onClick={() => setEditOpen(true)} className="gap-2">
+                <Pencil className="h-4 w-4" /> Editar compra
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setConfirmDel(true)}
+                className="gap-2 text-destructive focus:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" /> Excluir compra
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Valor disponível
+            </span>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-medium text-muted-foreground">
+                R$
+              </span>
+              <Input
+                inputMode="decimal"
+                value={budgetText}
+                onChange={(e) => {
+                  setBudgetText(e.target.value);
+                  saveBudget(e.target.value);
+                }}
+                placeholder="0,00"
+                className="h-11 rounded-xl pl-9 text-base font-semibold tabular-nums"
+              />
+            </div>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Data ({formatShortDate(dateText || purchase.date)})
+            </span>
+            <Input
+              type="date"
+              value={dateText}
+              onChange={(e) => {
+                setDateText(e.target.value);
+                saveDate(e.target.value);
+              }}
+              className="h-11 rounded-xl text-base"
+            />
+          </label>
+        </div>
+      </div>
+
+      <EditPurchaseDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        purchase={purchase}
+      />
+
+      <Dialog open={confirmDel} onOpenChange={setConfirmDel}>
+        <DialogContent className="rounded-3xl sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Excluir esta compra?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Todos os itens serão apagados. Esta ação não pode ser desfeita.
+          </p>
+          <DialogFooter className="flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDel(false)}
+              className="flex-1 rounded-2xl"
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirmDel(false);
+                onDelete();
+              }}
+              className="flex-1 rounded-2xl"
+            >
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </header>
+  );
+}
+
+function EditPurchaseDialog({
+  open,
+  onOpenChange,
+  purchase,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  purchase: Purchase;
+}) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(purchase.name);
+  const [icon, setIcon] = useState(purchase.icon);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setName(purchase.name);
+      setIcon(purchase.icon);
+    }
+  }, [open, purchase.name, purchase.icon]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="rounded-3xl sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Editar compra</DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setSaving(true);
+            const { error } = await supabase
+              .from("purchases")
+              .update({
+                name: name.trim().slice(0, 60),
+                icon,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("id", purchase.id);
+            setSaving(false);
+            if (!error) {
+              qc.invalidateQueries({ queryKey: ["purchase", purchase.id] });
+              qc.invalidateQueries({ queryKey: ["purchases"] });
+              onOpenChange(false);
+            }
+          }}
+          className="space-y-5"
+        >
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Nome</label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={60}
+              className="h-12 rounded-2xl text-base"
+            />
+          </div>
+          <div className="space-y-3">
+            <label className="text-sm font-medium">Ícone</label>
+            <IconPicker icons={PURCHASE_ICONS} value={icon} onChange={setIcon} />
+          </div>
+          <Button
+            type="submit"
+            disabled={saving || !name.trim()}
+            className="h-12 w-full rounded-2xl text-base font-semibold"
+          >
+            Salvar
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ItemRow({ item, purchaseId }: { item: Item; purchaseId: string }) {
+  const qc = useQueryClient();
+
+  const [qty, setQty] = useState(
+    item.quantity ? String(item.quantity).replace(".", ",") : "",
+  );
+  const [name, setName] = useState(item.name);
+  const [price, setPrice] = useState(
+    item.price ? String(item.price).replace(".", ",") : "",
+  );
+
+  useEffect(() => {
+    if (document.activeElement?.getAttribute("data-item-id") !== item.id + ":qty") {
+      setQty(item.quantity ? String(item.quantity).replace(".", ",") : "");
+    }
+    if (document.activeElement?.getAttribute("data-item-id") !== item.id + ":name") {
+      setName(item.name);
+    }
+    if (document.activeElement?.getAttribute("data-item-id") !== item.id + ":price") {
+      setPrice(item.price ? String(item.price).replace(".", ",") : "");
+    }
+  }, [item.quantity, item.name, item.price, item.id]);
+
+  const persist = useDebouncedCallback(
+    async (patch: Partial<Pick<Item, "quantity" | "name" | "price">>) => {
+      const { error } = await supabase
+        .from("purchase_items")
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq("id", item.id);
+      if (!error) qc.invalidateQueries({ queryKey: ["items", purchaseId] });
+    },
+    300,
+  );
+
+  const remove = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("purchase_items")
+        .delete()
+        .eq("id", item.id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["items", purchaseId] }),
+  });
+
+  const subtotal =
+    (parseNumber(qty) || 0) * (parseNumber(price) || 0);
+
+  return (
+    <li className="flex items-center gap-2 rounded-2xl border border-border bg-card px-2 py-2 shadow-sm">
+      <Input
+        data-item-id={item.id + ":qty"}
+        inputMode="decimal"
+        value={qty}
+        onChange={(e) => {
+          setQty(e.target.value);
+          persist({ quantity: parseNumber(e.target.value) });
+        }}
+        placeholder="1"
+        className="h-10 w-16 shrink-0 rounded-xl px-2 text-center text-base tabular-nums"
+      />
+      <Input
+        data-item-id={item.id + ":name"}
+        value={name}
+        onChange={(e) => {
+          setName(e.target.value);
+          persist({ name: e.target.value.slice(0, 200) });
+        }}
+        placeholder="Nome do produto"
+        className="h-10 min-w-[200px] flex-1 rounded-xl text-base"
+      />
+      <Input
+        data-item-id={item.id + ":price"}
+        inputMode="decimal"
+        value={price}
+        onChange={(e) => {
+          setPrice(e.target.value);
+          persist({ price: parseNumber(e.target.value) });
+        }}
+        placeholder="0,00"
+        className="h-10 w-28 shrink-0 rounded-xl text-right text-base tabular-nums"
+      />
+      <div className="w-28 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
+        {formatBRL(subtotal)}
+      </div>
+      <button
+        onClick={() => remove.mutate()}
+        aria-label="Remover item"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
+    </li>
+  );
+}
