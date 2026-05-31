@@ -223,6 +223,14 @@ function PurchaseDetailPage() {
           </div>
         </div>
       </footer>
+
+      <PreListDialog
+        open={preOpen}
+        onOpenChange={setPreOpen}
+        purchaseId={id}
+        items={items.map((it) => ({ id: it.id, name: it.name, quantity: it.quantity }))}
+        onJumpToItem={jumpToItem}
+      />
     </div>
   );
 }
