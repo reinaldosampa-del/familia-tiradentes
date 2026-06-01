@@ -570,11 +570,13 @@ function ItemRow({
   item,
   purchaseId,
   highlighted,
+  prev,
   rowRef,
 }: {
   item: Item;
   purchaseId: string;
   highlighted?: boolean;
+  prev?: HistoryHit;
   rowRef?: (el: HTMLLIElement | null) => void;
 }) {
   const qc = useQueryClient();
@@ -586,6 +588,7 @@ function ItemRow({
   const [price, setPrice] = useState(
     item.price ? String(item.price).replace(".", ",") : "",
   );
+  const [compareOpen, setCompareOpen] = useState(false);
 
   useEffect(() => {
     if (document.activeElement?.getAttribute("data-item-id") !== item.id + ":qty") {
@@ -624,13 +627,53 @@ function ItemRow({
   const subtotal =
     (parseNumber(qty) || 0) * (parseNumber(price) || 0);
 
+  // Comparison uses persisted price (item.price) so the color settles after typing.
+  const cmp = compareTo(item.price, prev);
+  const cmpBorder =
+    cmp === "cheaper"
+      ? "border-success ring-2 ring-success/40"
+      : cmp === "same"
+        ? "border-warning ring-2 ring-warning/40"
+        : cmp === "more"
+          ? "border-destructive ring-2 ring-destructive/40"
+          : "border-border";
+
+  // Long-press (touch + mouse) opens the comparison modal.
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPress = () => {
+    if (!prev) return;
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = setTimeout(() => setCompareOpen(true), 500);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+  useEffect(() => () => cancelPress(), []);
+
   return (
     <li
       ref={rowRef}
+      onContextMenu={(e) => {
+        if (prev) {
+          e.preventDefault();
+          setCompareOpen(true);
+        }
+      }}
+      onTouchStart={startPress}
+      onTouchEnd={cancelPress}
+      onTouchMove={cancelPress}
+      onPointerDown={(e) => {
+        if (e.pointerType === "mouse") startPress();
+      }}
+      onPointerUp={cancelPress}
+      onPointerLeave={cancelPress}
       className={`flex items-center gap-2 rounded-2xl border bg-card px-2 py-2 shadow-sm transition-all ${
         highlighted
           ? "border-primary ring-2 ring-primary/40 scale-[1.01]"
-          : "border-border"
+          : cmpBorder
       }`}
     >
       <Input
@@ -675,6 +718,75 @@ function ItemRow({
       >
         <Trash2 className="h-4 w-4" />
       </button>
+
+      <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
+        <DialogContent className="rounded-3xl sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="truncate">{item.name || "Produto"}</DialogTitle>
+            <DialogDescription>
+              Comparação com a compra anterior mais próxima.
+            </DialogDescription>
+          </DialogHeader>
+          {prev ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-muted/60 p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Anterior
+                </p>
+                <p className="mt-1 text-xl font-bold tabular-nums">
+                  {formatBRL(prev.price)}
+                </p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {prev.purchaseName} · {formatShortDate(prev.date)}
+                </p>
+                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  {prev.name}
+                </p>
+              </div>
+              <div
+                className={`rounded-2xl p-3 ${
+                  cmp === "cheaper"
+                    ? "bg-success/10"
+                    : cmp === "more"
+                      ? "bg-destructive/10"
+                      : cmp === "same"
+                        ? "bg-warning/10"
+                        : "bg-muted/60"
+                }`}
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Atual
+                </p>
+                <p
+                  className={`mt-1 text-xl font-bold tabular-nums ${
+                    cmp === "cheaper"
+                      ? "text-success"
+                      : cmp === "more"
+                        ? "text-destructive"
+                        : "text-foreground"
+                  }`}
+                >
+                  {formatBRL(item.price)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {cmp === "cheaper"
+                    ? "Mais barato 🎉"
+                    : cmp === "more"
+                      ? `+${formatBRL(item.price - prev.price)} mais caro`
+                      : cmp === "same"
+                        ? "Mesmo preço"
+                        : "Sem preço informado"}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nenhum registro anterior encontrado para este produto.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
     </li>
   );
+}
 }
