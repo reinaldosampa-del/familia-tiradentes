@@ -17,6 +17,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,25 @@ import { Input } from "@/components/ui/input";
 import { IconPicker } from "@/components/IconPicker";
 import { PURCHASE_ICONS } from "@/lib/icons";
 import { getIcon } from "@/lib/icons";
-import { formatBRL, formatShortDate, parseNumber } from "@/lib/format";
+import { formatBRL, formatShortDate, normalizeName, parseNumber } from "@/lib/format";
+
+type HistoryHit = {
+  price: number;
+  name: string;
+  purchaseName: string;
+  date: string;
+};
+
+type Compare = "cheaper" | "same" | "more" | "none";
+
+function compareTo(currentPrice: number, prev?: HistoryHit): Compare {
+  if (!prev || !(prev.price > 0) || !(currentPrice > 0)) return "none";
+  const a = Math.round(currentPrice * 100);
+  const b = Math.round(prev.price * 100);
+  if (a < b) return "cheaper";
+  if (a > b) return "more";
+  return "same";
+}
 
 export const Route = createFileRoute("/compra/$id")({
   head: () => ({
@@ -103,6 +122,61 @@ function PurchaseDetailPage() {
     },
   });
 
+  // Realtime for the history too — other devices may edit older purchases.
+  useRealtime("history-purchases", "purchases", [["price-history"]]);
+  useRealtime("history-items", "purchase_items", [["price-history"]]);
+
+  // Pull all priced items from OTHER purchases dated <= current date.
+  const { data: history = [] } = useQuery({
+    queryKey: ["price-history", id, purchase?.date ?? ""],
+    enabled: !!purchase?.date,
+    queryFn: async () => {
+      const { data: ps, error: e1 } = await supabase
+        .from("purchases")
+        .select("id, name, date")
+        .neq("id", id)
+        .lte("date", purchase!.date);
+      if (e1) throw e1;
+      const ids = (ps ?? []).map((p) => p.id);
+      if (ids.length === 0) return [] as HistoryHit[];
+      const map = new Map(ps!.map((p) => [p.id, p]));
+      const { data: its, error: e2 } = await supabase
+        .from("purchase_items")
+        .select("purchase_id, name, price")
+        .in("purchase_id", ids)
+        .gt("price", 0);
+      if (e2) throw e2;
+      return (its ?? [])
+        .map((it) => {
+          const p = map.get(it.purchase_id)!;
+          return {
+            price: Number(it.price) || 0,
+            name: it.name as string,
+            purchaseName: (p.name as string) || "Sem nome",
+            date: p.date as string,
+          };
+        })
+        .filter((h) => h.name && h.name.trim().length > 0) as HistoryHit[];
+    },
+  });
+
+  // For a given item name, find the most recent prior occurrence (by date).
+  const findPrev = useMemo(() => {
+    return (rawName: string): HistoryHit | undefined => {
+      const key = normalizeName(rawName);
+      if (!key) return undefined;
+      let best: HistoryHit | undefined;
+      for (const h of history) {
+        const n = normalizeName(h.name);
+        if (!n) continue;
+        if (n === key || n.includes(key) || key.includes(n)) {
+          if (!best || h.date > best.date) best = h;
+        }
+      }
+      return best;
+    };
+  }, [history]);
+
   const total = useMemo(
     () => items.reduce((acc, it) => acc + (it.quantity || 0) * (it.price || 0), 0),
     [items],
@@ -179,6 +253,7 @@ function PurchaseDetailPage() {
                   item={item}
                   purchaseId={id}
                   highlighted={highlightId === item.id}
+                  prev={findPrev(item.name)}
                   rowRef={(el) => {
                     itemRefs.current[item.id] = el;
                   }}
@@ -495,11 +570,13 @@ function ItemRow({
   item,
   purchaseId,
   highlighted,
+  prev,
   rowRef,
 }: {
   item: Item;
   purchaseId: string;
   highlighted?: boolean;
+  prev?: HistoryHit;
   rowRef?: (el: HTMLLIElement | null) => void;
 }) {
   const qc = useQueryClient();
@@ -511,6 +588,7 @@ function ItemRow({
   const [price, setPrice] = useState(
     item.price ? String(item.price).replace(".", ",") : "",
   );
+  const [compareOpen, setCompareOpen] = useState(false);
 
   useEffect(() => {
     if (document.activeElement?.getAttribute("data-item-id") !== item.id + ":qty") {
@@ -549,13 +627,53 @@ function ItemRow({
   const subtotal =
     (parseNumber(qty) || 0) * (parseNumber(price) || 0);
 
+  // Comparison uses persisted price (item.price) so the color settles after typing.
+  const cmp = compareTo(item.price, prev);
+  const cmpBorder =
+    cmp === "cheaper"
+      ? "border-success ring-2 ring-success/40"
+      : cmp === "same"
+        ? "border-warning ring-2 ring-warning/40"
+        : cmp === "more"
+          ? "border-destructive ring-2 ring-destructive/40"
+          : "border-border";
+
+  // Long-press (touch + mouse) opens the comparison modal.
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPress = () => {
+    if (!prev) return;
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = setTimeout(() => setCompareOpen(true), 500);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+  useEffect(() => () => cancelPress(), []);
+
   return (
     <li
       ref={rowRef}
+      onContextMenu={(e) => {
+        if (prev) {
+          e.preventDefault();
+          setCompareOpen(true);
+        }
+      }}
+      onTouchStart={startPress}
+      onTouchEnd={cancelPress}
+      onTouchMove={cancelPress}
+      onPointerDown={(e) => {
+        if (e.pointerType === "mouse") startPress();
+      }}
+      onPointerUp={cancelPress}
+      onPointerLeave={cancelPress}
       className={`flex items-center gap-2 rounded-2xl border bg-card px-2 py-2 shadow-sm transition-all ${
         highlighted
           ? "border-primary ring-2 ring-primary/40 scale-[1.01]"
-          : "border-border"
+          : cmpBorder
       }`}
     >
       <Input
@@ -600,6 +718,74 @@ function ItemRow({
       >
         <Trash2 className="h-4 w-4" />
       </button>
+
+      <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
+        <DialogContent className="rounded-3xl sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="truncate">{item.name || "Produto"}</DialogTitle>
+            <DialogDescription>
+              Comparação com a compra anterior mais próxima.
+            </DialogDescription>
+          </DialogHeader>
+          {prev ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-muted/60 p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Anterior
+                </p>
+                <p className="mt-1 text-xl font-bold tabular-nums">
+                  {formatBRL(prev.price)}
+                </p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {prev.purchaseName} · {formatShortDate(prev.date)}
+                </p>
+                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                  {prev.name}
+                </p>
+              </div>
+              <div
+                className={`rounded-2xl p-3 ${
+                  cmp === "cheaper"
+                    ? "bg-success/10"
+                    : cmp === "more"
+                      ? "bg-destructive/10"
+                      : cmp === "same"
+                        ? "bg-warning/10"
+                        : "bg-muted/60"
+                }`}
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Atual
+                </p>
+                <p
+                  className={`mt-1 text-xl font-bold tabular-nums ${
+                    cmp === "cheaper"
+                      ? "text-success"
+                      : cmp === "more"
+                        ? "text-destructive"
+                        : "text-foreground"
+                  }`}
+                >
+                  {formatBRL(item.price)}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {cmp === "cheaper"
+                    ? "Mais barato 🎉"
+                    : cmp === "more"
+                      ? `+${formatBRL(item.price - prev.price)} mais caro`
+                      : cmp === "same"
+                        ? "Mesmo preço"
+                        : "Sem preço informado"}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nenhum registro anterior encontrado para este produto.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
     </li>
   );
 }

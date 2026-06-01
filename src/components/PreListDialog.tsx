@@ -188,9 +188,11 @@ function PreItemRow({
     onSuccess: () => qc.invalidateQueries({ queryKey: ["pre_items", pre.purchase_id] }),
   });
 
+  // Use the persisted values (pre.name / pre.quantity) so the status only
+  // updates after the debounced save completes — doesn't flicker while typing.
   const { status, matchId } = useMemo(
-    () => statusFor({ ...pre, name, quantity: parseNumber(qty) || 0 }, items),
-    [pre, name, qty, items],
+    () => statusFor(pre, items),
+    [pre, items],
   );
 
   const ring =
