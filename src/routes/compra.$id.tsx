@@ -348,13 +348,62 @@ function PurchaseHeader({
     if (!error) qc.invalidateQueries({ queryKey: ["purchase", purchase.id] });
   }, 350);
 
+  const navigate = useNavigate();
+
+  // Mudar a data NÃO altera a lista atual. Em vez disso, cada data é uma
+  // "compra" independente (mesmo nome/ícone). Procuramos uma compra existente
+  // com o mesmo nome nesta data; se não houver, criamos uma nova (copiando a
+  // pré-lista) e navegamos para ela. A lista antiga permanece intacta.
   const saveDate = async (value: string) => {
-    if (!value) return;
-    const { error } = await supabase
+    if (!value || value === purchase.date) return;
+    const nameKey = normalizeName(purchase.name);
+
+    // Buscar compras nessa data com nome similar (case/acento-insensível).
+    const { data: candidates } = await supabase
       .from("purchases")
-      .update({ date: value, updated_at: new Date().toISOString() })
-      .eq("id", purchase.id);
-    if (!error) qc.invalidateQueries({ queryKey: ["purchase", purchase.id] });
+      .select("id, name, date")
+      .eq("date", value);
+
+    const match = (candidates ?? []).find(
+      (c) => normalizeName(c.name as string) === nameKey,
+    );
+
+    if (match && match.id !== purchase.id) {
+      navigate({ to: "/compra/$id", params: { id: match.id as string } });
+      return;
+    }
+
+    // Criar nova compra para essa data, herdando nome/ícone/orçamento.
+    const { data: created, error } = await supabase
+      .from("purchases")
+      .insert({
+        name: purchase.name,
+        icon: purchase.icon,
+        budget: purchase.budget,
+        date: value,
+      })
+      .select("id")
+      .single();
+    if (error || !created) return;
+
+    // Copiar pré-lista (anotações) para a nova data.
+    const { data: pre } = await supabase
+      .from("pre_list_items")
+      .select("quantity, name, position")
+      .eq("purchase_id", purchase.id);
+    if (pre && pre.length > 0) {
+      await supabase.from("pre_list_items").insert(
+        pre.map((p) => ({
+          purchase_id: created.id as string,
+          quantity: p.quantity,
+          name: p.name,
+          position: p.position,
+        })),
+      );
+    }
+
+    qc.invalidateQueries({ queryKey: ["purchases"] });
+    navigate({ to: "/compra/$id", params: { id: created.id as string } });
   };
 
   return (
