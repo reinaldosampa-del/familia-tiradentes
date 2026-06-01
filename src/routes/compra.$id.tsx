@@ -253,6 +253,7 @@ function PurchaseDetailPage() {
                   item={item}
                   purchaseId={id}
                   highlighted={highlightId === item.id}
+                  prev={findPrev(item.name)}
                   rowRef={(el) => {
                     itemRefs.current[item.id] = el;
                   }}
