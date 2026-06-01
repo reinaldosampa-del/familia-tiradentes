@@ -1,11 +1,14 @@
 import { createFileRoute, Link, useRouter, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, MoreVertical, Plus, Trash2, Pencil, ListChecks } from "lucide-react";
+import { ArrowLeft, MoreVertical, Plus, Trash2, Pencil, ListChecks, CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { PreListDialog } from "@/components/PreListDialog";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
