@@ -122,6 +122,61 @@ function PurchaseDetailPage() {
     },
   });
 
+  // Realtime for the history too — other devices may edit older purchases.
+  useRealtime("history-purchases", "purchases", [["price-history"]]);
+  useRealtime("history-items", "purchase_items", [["price-history"]]);
+
+  // Pull all priced items from OTHER purchases dated <= current date.
+  const { data: history = [] } = useQuery({
+    queryKey: ["price-history", id, purchase?.date ?? ""],
+    enabled: !!purchase?.date,
+    queryFn: async () => {
+      const { data: ps, error: e1 } = await supabase
+        .from("purchases")
+        .select("id, name, date")
+        .neq("id", id)
+        .lte("date", purchase!.date);
+      if (e1) throw e1;
+      const ids = (ps ?? []).map((p) => p.id);
+      if (ids.length === 0) return [] as HistoryHit[];
+      const map = new Map(ps!.map((p) => [p.id, p]));
+      const { data: its, error: e2 } = await supabase
+        .from("purchase_items")
+        .select("purchase_id, name, price")
+        .in("purchase_id", ids)
+        .gt("price", 0);
+      if (e2) throw e2;
+      return (its ?? [])
+        .map((it) => {
+          const p = map.get(it.purchase_id)!;
+          return {
+            price: Number(it.price) || 0,
+            name: it.name as string,
+            purchaseName: (p.name as string) || "Sem nome",
+            date: p.date as string,
+          };
+        })
+        .filter((h) => h.name && h.name.trim().length > 0) as HistoryHit[];
+    },
+  });
+
+  // For a given item name, find the most recent prior occurrence (by date).
+  const findPrev = useMemo(() => {
+    return (rawName: string): HistoryHit | undefined => {
+      const key = normalizeName(rawName);
+      if (!key) return undefined;
+      let best: HistoryHit | undefined;
+      for (const h of history) {
+        const n = normalizeName(h.name);
+        if (!n) continue;
+        if (n === key || n.includes(key) || key.includes(n)) {
+          if (!best || h.date > best.date) best = h;
+        }
+      }
+      return best;
+    };
+  }, [history]);
+
   const total = useMemo(
     () => items.reduce((acc, it) => acc + (it.quantity || 0) * (it.price || 0), 0),
     [items],
