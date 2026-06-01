@@ -1,11 +1,14 @@
 import { createFileRoute, Link, useRouter, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, MoreVertical, Plus, Trash2, Pencil, ListChecks } from "lucide-react";
+import { ArrowLeft, MoreVertical, Plus, Trash2, Pencil, ListChecks, CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { PreListDialog } from "@/components/PreListDialog";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -406,6 +409,42 @@ function PurchaseHeader({
     navigate({ to: "/compra/$id", params: { id: created.id as string } });
   };
 
+  // Buscar todas as datas com registro do mesmo nome de compra (para marcar no calendário).
+  useRealtime("date-marks", "purchases", [["purchase-dates", normalizeName(purchase.name)]]);
+  const nameKey = normalizeName(purchase.name);
+  const { data: markedDates = [] } = useQuery({
+    queryKey: ["purchase-dates", nameKey],
+    enabled: !!nameKey,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("purchases").select("name, date");
+      if (error) throw error;
+      return (data ?? [])
+        .filter((p) => normalizeName(p.name as string) === nameKey)
+        .map((p) => p.date as string);
+    },
+  });
+
+  const markedDateObjs = useMemo(
+    () =>
+      markedDates.map((iso) => {
+        const [y, m, d] = iso.split("-").map(Number);
+        return new Date(y, (m || 1) - 1, d || 1);
+      }),
+    [markedDates],
+  );
+
+  const selectedDateObj = useMemo(() => {
+    const [y, m, d] = (dateText || purchase.date).split("-").map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+  }, [dateText, purchase.date]);
+
+  const toISO = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
   return (
     <header className="border-b border-border bg-card">
       <div className="mx-auto max-w-4xl px-3 py-3">
@@ -485,20 +524,42 @@ function PurchaseHeader({
             </div>
           </label>
 
-          <label className="block">
+          <div className="block">
             <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Data ({formatShortDate(dateText || purchase.date)})
+              Data
             </span>
-            <Input
-              type="date"
-              value={dateText}
-              onChange={(e) => {
-                setDateText(e.target.value);
-                saveDate(e.target.value);
-              }}
-              className="h-11 rounded-xl text-base"
-            />
-          </label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full justify-start rounded-xl text-base font-medium"
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4 opacity-60" />
+                  {formatShortDate(dateText || purchase.date)}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={selectedDateObj}
+                  onSelect={(d) => {
+                    if (!d) return;
+                    const iso = toISO(d);
+                    setDateText(iso);
+                    saveDate(iso);
+                  }}
+                  modifiers={{ hasRecord: markedDateObjs }}
+                  modifiersClassNames={{
+                    hasRecord:
+                      "relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:h-1.5 after:w-1.5 after:rounded-full after:bg-primary",
+                  }}
+                  initialFocus
+                  className={cn("p-3 pointer-events-auto")}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
       </div>
 
