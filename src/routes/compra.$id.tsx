@@ -17,6 +17,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,25 @@ import { Input } from "@/components/ui/input";
 import { IconPicker } from "@/components/IconPicker";
 import { PURCHASE_ICONS } from "@/lib/icons";
 import { getIcon } from "@/lib/icons";
-import { formatBRL, formatShortDate, parseNumber } from "@/lib/format";
+import { formatBRL, formatShortDate, normalizeName, parseNumber } from "@/lib/format";
+
+type HistoryHit = {
+  price: number;
+  name: string;
+  purchaseName: string;
+  date: string;
+};
+
+type Compare = "cheaper" | "same" | "more" | "none";
+
+function compareTo(currentPrice: number, prev?: HistoryHit): Compare {
+  if (!prev || !(prev.price > 0) || !(currentPrice > 0)) return "none";
+  const a = Math.round(currentPrice * 100);
+  const b = Math.round(prev.price * 100);
+  if (a < b) return "cheaper";
+  if (a > b) return "more";
+  return "same";
+}
 
 export const Route = createFileRoute("/compra/$id")({
   head: () => ({
