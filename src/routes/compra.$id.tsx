@@ -524,20 +524,42 @@ function PurchaseHeader({
             </div>
           </label>
 
-          <label className="block">
+          <div className="block">
             <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Data ({formatShortDate(dateText || purchase.date)})
+              Data
             </span>
-            <Input
-              type="date"
-              value={dateText}
-              onChange={(e) => {
-                setDateText(e.target.value);
-                saveDate(e.target.value);
-              }}
-              className="h-11 rounded-xl text-base"
-            />
-          </label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full justify-start rounded-xl text-base font-medium"
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4 opacity-60" />
+                  {formatShortDate(dateText || purchase.date)}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-auto p-0">
+                <Calendar
+                  mode="single"
+                  selected={selectedDateObj}
+                  onSelect={(d) => {
+                    if (!d) return;
+                    const iso = toISO(d);
+                    setDateText(iso);
+                    saveDate(iso);
+                  }}
+                  modifiers={{ hasRecord: markedDateObjs }}
+                  modifiersClassNames={{
+                    hasRecord:
+                      "relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:h-1.5 after:w-1.5 after:rounded-full after:bg-primary",
+                  }}
+                  initialFocus
+                  className={cn("p-3 pointer-events-auto")}
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
       </div>
 
