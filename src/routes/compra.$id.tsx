@@ -789,4 +789,3 @@ function ItemRow({
     </li>
   );
 }
-}
