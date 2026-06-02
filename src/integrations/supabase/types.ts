@@ -17,6 +17,7 @@ export type Database = {
       pre_list_items: {
         Row: {
           created_at: string
+          group_key: string | null
           id: string
           name: string
           position: number
@@ -26,6 +27,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          group_key?: string | null
           id?: string
           name?: string
           position?: number
@@ -35,6 +37,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          group_key?: string | null
           id?: string
           name?: string
           position?: number
@@ -54,6 +57,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          color: string
           created_at: string
           icon: string
           id: string
@@ -61,6 +65,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          color?: string
           created_at?: string
           icon?: string
           id?: string
@@ -68,6 +73,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          color?: string
           created_at?: string
           icon?: string
           id?: string
@@ -79,6 +85,7 @@ export type Database = {
       purchase_items: {
         Row: {
           created_at: string
+          created_by: string | null
           id: string
           name: string
           position: number
@@ -89,6 +96,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          created_by?: string | null
           id?: string
           name?: string
           position?: number
@@ -99,6 +107,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          created_by?: string | null
           id?: string
           name?: string
           position?: number
@@ -122,6 +131,7 @@ export type Database = {
           budget: number
           created_at: string
           date: string
+          group_key: string | null
           icon: string
           id: string
           name: string
@@ -131,6 +141,7 @@ export type Database = {
           budget?: number
           created_at?: string
           date?: string
+          group_key?: string | null
           icon?: string
           id?: string
           name?: string
@@ -140,6 +151,7 @@ export type Database = {
           budget?: number
           created_at?: string
           date?: string
+          group_key?: string | null
           icon?: string
           id?: string
           name?: string
@@ -152,7 +164,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      normalize_name: { Args: { s: string }; Returns: string }
     }
     Enums: {
       [_ in never]: never
