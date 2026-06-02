@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
-import { normalizeName, parseNumber } from "@/lib/format";
+import { parseNumber, similar } from "@/lib/format";
 import {
   Dialog,
   DialogContent,
@@ -16,10 +16,10 @@ import { Input } from "@/components/ui/input";
 
 export type PreItem = {
   id: string;
-  purchase_id: string;
   quantity: number;
   name: string;
   position: number;
+  group_key: string | null;
 };
 
 export type ListItem = {
@@ -31,12 +31,8 @@ export type ListItem = {
 type Status = "missing" | "qty" | "ok" | "empty";
 
 function findMatch(pre: PreItem, items: ListItem[]) {
-  const key = normalizeName(pre.name);
-  if (!key) return undefined;
-  return items.find((it) => {
-    const n = normalizeName(it.name);
-    return n && (n.includes(key) || key.includes(n));
-  });
+  if (!pre.name.trim()) return undefined;
+  return items.find((it) => similar(pre.name, it.name));
 }
 
 function statusFor(pre: PreItem, items: ListItem[]): { status: Status; matchId?: string } {
@@ -52,12 +48,14 @@ function statusFor(pre: PreItem, items: ListItem[]): { status: Status; matchId?:
 export function PreListDialog({
   open,
   onOpenChange,
+  groupKey,
   purchaseId,
   items,
   onJumpToItem,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
+  groupKey: string;
   purchaseId: string;
   items: ListItem[];
   onJumpToItem: (itemId: string) => void;
@@ -65,19 +63,20 @@ export function PreListDialog({
   const qc = useQueryClient();
 
   useRealtime(
-    `pre-${purchaseId}`,
+    `pre-${groupKey}`,
     "pre_list_items",
-    [["pre_items", purchaseId]],
-    `purchase_id=eq.${purchaseId}`,
+    [["pre_items", groupKey]],
+    `group_key=eq.${groupKey}`,
   );
 
   const { data: preItems = [] } = useQuery({
-    queryKey: ["pre_items", purchaseId],
+    queryKey: ["pre_items", groupKey],
+    enabled: !!groupKey,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("pre_list_items")
-        .select("id, purchase_id, quantity, name, position")
-        .eq("purchase_id", purchaseId)
+        .select("id, quantity, name, position, group_key")
+        .eq("group_key", groupKey)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true });
       if (error) throw error;
@@ -89,10 +88,16 @@ export function PreListDialog({
     mutationFn: async () => {
       const { error } = await supabase
         .from("pre_list_items")
-        .insert({ purchase_id: purchaseId, quantity: 1, name: "", position: preItems.length });
+        .insert({
+          purchase_id: purchaseId,
+          group_key: groupKey,
+          quantity: 1,
+          name: "",
+          position: preItems.length,
+        });
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pre_items", purchaseId] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pre_items", groupKey] }),
   });
 
   return (
@@ -101,8 +106,8 @@ export function PreListDialog({
         <DialogHeader>
           <DialogTitle>Pré-lista</DialogTitle>
           <DialogDescription>
-            Compare o que você precisa com o que já está no carrinho. Toque no nome para
-            ver o item.
+            Compartilhada entre todas as datas dessa compra. Toque no nome para ver o
+            item.
           </DialogDescription>
         </DialogHeader>
 
@@ -122,6 +127,7 @@ export function PreListDialog({
               <PreItemRow
                 key={pre.id}
                 pre={pre}
+                groupKey={groupKey}
                 items={items}
                 onJump={(id) => {
                   onJumpToItem(id);
@@ -149,10 +155,12 @@ function LegendDot({ className }: { className: string }) {
 
 function PreItemRow({
   pre,
+  groupKey,
   items,
   onJump,
 }: {
   pre: PreItem;
+  groupKey: string;
   items: ListItem[];
   onJump: (itemId: string) => void;
 }) {
@@ -175,9 +183,9 @@ function PreItemRow({
         .from("pre_list_items")
         .update({ ...patch, updated_at: new Date().toISOString() })
         .eq("id", pre.id);
-      if (!error) qc.invalidateQueries({ queryKey: ["pre_items", pre.purchase_id] });
+      if (!error) qc.invalidateQueries({ queryKey: ["pre_items", groupKey] });
     },
-    300,
+    400,
   );
 
   const remove = useMutation({
@@ -185,15 +193,11 @@ function PreItemRow({
       const { error } = await supabase.from("pre_list_items").delete().eq("id", pre.id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["pre_items", pre.purchase_id] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pre_items", groupKey] }),
   });
 
-  // Use the persisted values (pre.name / pre.quantity) so the status only
-  // updates after the debounced save completes — doesn't flicker while typing.
-  const { status, matchId } = useMemo(
-    () => statusFor(pre, items),
-    [pre, items],
-  );
+  // Status calculado sobre o valor persistido (espera o debounce terminar).
+  const { status, matchId } = useMemo(() => statusFor(pre, items), [pre, items]);
 
   const ring =
     status === "missing"
