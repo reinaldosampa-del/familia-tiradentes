@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,7 +9,7 @@ import { ProfileSetup } from "@/components/ProfileSetup";
 import { ProfileBadge } from "@/components/ProfileBadge";
 import { CreatePurchaseDialog } from "@/components/CreatePurchaseDialog";
 import { getIcon } from "@/lib/icons";
-import { formatShortDate, todayISO } from "@/lib/format";
+import { formatShortDate, normalizeName, todayISO } from "@/lib/format";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -33,6 +33,7 @@ type PurchaseRow = {
   icon: string;
   budget: number;
   date: string;
+  group_key: string | null;
 };
 
 function HomePage() {
@@ -73,7 +74,7 @@ function PurchasesScreen({ children }: { children: React.ReactNode }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("purchases")
-        .select("id, name, icon, budget, date")
+        .select("id, name, icon, budget, date, group_key")
         .order("date", { ascending: false })
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -81,8 +82,29 @@ function PurchasesScreen({ children }: { children: React.ReactNode }) {
     },
   });
 
+  // Agrupa por group_key (ou normalize_name(name)) — só 1 card por compra.
+  // O card aponta para a versão MAIS RECENTE (data) daquele grupo.
+  const grouped = useMemo(() => {
+    const map = new Map<string, PurchaseRow>();
+    for (const p of purchases) {
+      const key = p.group_key || normalizeName(p.name) || p.id;
+      const existing = map.get(key);
+      if (!existing || p.date > existing.date) {
+        map.set(key, p);
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [purchases]);
+
   const createPurchase = useMutation({
     mutationFn: async (input: { name: string; icon: string }) => {
+      // Se já existe uma compra com o mesmo nome, abrir a mais recente dela
+      const key = normalizeName(input.name);
+      const existing = purchases.find(
+        (p) => (p.group_key || normalizeName(p.name)) === key,
+      );
+      if (existing) return existing.id;
+
       const { data, error } = await supabase
         .from("purchases")
         .insert({ name: input.name, icon: input.icon, date: todayISO(), budget: 0 })
@@ -96,7 +118,6 @@ function PurchasesScreen({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-dvh bg-background">
-      {/* Header */}
       <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
           <div>
@@ -116,11 +137,11 @@ function PurchasesScreen({ children }: { children: React.ReactNode }) {
               <div key={i} className="h-32 animate-pulse rounded-3xl bg-muted" />
             ))}
           </div>
-        ) : purchases.length === 0 ? (
+        ) : grouped.length === 0 ? (
           <EmptyState />
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {purchases.map((p) => (
+            {grouped.map((p) => (
               <li key={p.id}>
                 <PurchaseCard purchase={p} />
               </li>
@@ -129,7 +150,6 @@ function PurchasesScreen({ children }: { children: React.ReactNode }) {
         )}
       </main>
 
-      {/* Floating big add button */}
       <button
         onClick={() => setCreating(true)}
         aria-label="Nova compra"
@@ -159,7 +179,7 @@ function PurchaseCard({ purchase }: { purchase: PurchaseRow }) {
         <Icon className="h-7 w-7" />
       </span>
       <span className="text-xs font-medium text-muted-foreground">
-        {formatShortDate(purchase.date)}
+        Última: {formatShortDate(purchase.date)}
       </span>
       <span className="line-clamp-1 text-center text-base font-semibold text-foreground">
         {purchase.name || "Sem nome"}

@@ -2,7 +2,7 @@ import { ProfileForm } from "./ProfileForm";
 import { ShoppingBasket } from "lucide-react";
 
 interface Props {
-  onCreate: (data: { name: string; icon: string }) => void;
+  onCreate: (data: { name: string; icon: string; color: string }) => void;
   isSubmitting?: boolean;
 }
 

@@ -7,13 +7,13 @@ export type Profile = {
   id: string;
   name: string;
   icon: string;
+  color: string;
 };
 
 export function useProfile() {
   const qc = useQueryClient();
   const [profileId, setProfileId] = useState<string | null>(() => getStoredProfileId());
 
-  // Hydrate on mount in case of SSR
   useEffect(() => {
     const id = getStoredProfileId();
     if (id !== profileId) setProfileId(id);
@@ -26,7 +26,7 @@ export function useProfile() {
       if (!profileId) return null;
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, name, icon")
+        .select("id, name, icon, color")
         .eq("id", profileId)
         .maybeSingle();
       if (error) throw error;
@@ -35,11 +35,11 @@ export function useProfile() {
   });
 
   const create = useMutation({
-    mutationFn: async (input: { name: string; icon: string }) => {
+    mutationFn: async (input: { name: string; icon: string; color: string }) => {
       const { data, error } = await supabase
         .from("profiles")
-        .insert({ name: input.name, icon: input.icon })
-        .select("id, name, icon")
+        .insert({ name: input.name, icon: input.icon, color: input.color })
+        .select("id, name, icon, color")
         .single();
       if (error) throw error;
       return data as Profile;
@@ -52,13 +52,18 @@ export function useProfile() {
   });
 
   const update = useMutation({
-    mutationFn: async (input: { name: string; icon: string }) => {
+    mutationFn: async (input: { name: string; icon: string; color: string }) => {
       if (!profileId) throw new Error("Sem perfil");
       const { data, error } = await supabase
         .from("profiles")
-        .update({ name: input.name, icon: input.icon, updated_at: new Date().toISOString() })
+        .update({
+          name: input.name,
+          icon: input.icon,
+          color: input.color,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", profileId)
-        .select("id, name, icon")
+        .select("id, name, icon, color")
         .single();
       if (error) throw error;
       return data as Profile;

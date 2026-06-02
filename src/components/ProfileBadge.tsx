@@ -6,7 +6,7 @@ import type { Profile } from "@/hooks/useProfile";
 
 interface Props {
   profile: Profile;
-  onUpdate: (data: { name: string; icon: string }) => Promise<unknown> | unknown;
+  onUpdate: (data: { name: string; icon: string; color: string }) => Promise<unknown> | unknown;
 }
 
 export function ProfileBadge({ profile, onUpdate }: Props) {
@@ -20,7 +20,10 @@ export function ProfileBadge({ profile, onUpdate }: Props) {
         onClick={() => setOpen(true)}
         className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm font-medium shadow-sm transition-all hover:border-primary active:scale-95"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground">
+        <span
+          className="flex h-7 w-7 items-center justify-center rounded-full text-white"
+          style={{ backgroundColor: profile.color || "#3b82f6" }}
+        >
           <Icon className="h-4 w-4" />
         </span>
         <span className="max-w-[120px] truncate">{profile.name}</span>
@@ -34,6 +37,7 @@ export function ProfileBadge({ profile, onUpdate }: Props) {
           <ProfileForm
             initialName={profile.name}
             initialIcon={profile.icon}
+            initialColor={profile.color}
             submitLabel="Salvar"
             isSubmitting={saving}
             onSubmit={async (data) => {

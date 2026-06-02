@@ -1,10 +1,19 @@
 import { createFileRoute, Link, useRouter, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, MoreVertical, Plus, Trash2, Pencil, ListChecks, CalendarIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  MoreVertical,
+  Plus,
+  Trash2,
+  Pencil,
+  ListChecks,
+  CalendarIcon,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
+import { useProfile } from "@/hooks/useProfile";
 import { PreListDialog } from "@/components/PreListDialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -26,9 +35,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { IconPicker } from "@/components/IconPicker";
-import { PURCHASE_ICONS } from "@/lib/icons";
-import { getIcon } from "@/lib/icons";
-import { formatBRL, formatShortDate, normalizeName, parseNumber } from "@/lib/format";
+import { PURCHASE_ICONS, getIcon } from "@/lib/icons";
+import {
+  formatBRL,
+  formatMoneyInput,
+  formatQtyInput,
+  formatShortDate,
+  normalizeName,
+  parseNumber,
+  similar,
+} from "@/lib/format";
 
 type HistoryHit = {
   price: number;
@@ -79,6 +95,7 @@ type Purchase = {
   icon: string;
   budget: number;
   date: string;
+  group_key: string | null;
 };
 
 type Item = {
@@ -88,12 +105,16 @@ type Item = {
   name: string;
   price: number;
   position: number;
+  created_by: string | null;
 };
+
+type Author = { id: string; name: string; icon: string; color: string };
 
 function PurchaseDetailPage() {
   const { id } = Route.useParams();
   const router = useRouter();
   const qc = useQueryClient();
+  const { profileId } = useProfile();
 
   useRealtime(`purchase-${id}`, "purchases", [["purchase", id]], `id=eq.${id}`);
   useRealtime(`items-${id}`, "purchase_items", [["items", id]], `purchase_id=eq.${id}`);
@@ -103,7 +124,7 @@ function PurchaseDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("purchases")
-        .select("id, name, icon, budget, date")
+        .select("id, name, icon, budget, date, group_key")
         .eq("id", id)
         .maybeSingle();
       if (error) throw error;
@@ -111,12 +132,14 @@ function PurchaseDetailPage() {
     },
   });
 
+  const groupKey = purchase?.group_key || (purchase ? normalizeName(purchase.name) : "");
+
   const { data: items = [] } = useQuery({
     queryKey: ["items", id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("purchase_items")
-        .select("id, purchase_id, quantity, name, price, position")
+        .select("id, purchase_id, quantity, name, price, position, created_by")
         .eq("purchase_id", id)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true });
@@ -125,20 +148,18 @@ function PurchaseDetailPage() {
     },
   });
 
-  // Realtime for the history too — other devices may edit older purchases.
+  // Realtime histórico (qualquer compra editada deve atualizar comparações).
   useRealtime("history-purchases", "purchases", [["price-history"]]);
   useRealtime("history-items", "purchase_items", [["price-history"]]);
 
-  // Pull all priced items from OTHER purchases dated <= current date.
+  // Compara com TODAS as compras (exceto a atual), sem limite de data.
   const { data: history = [] } = useQuery({
-    queryKey: ["price-history", id, purchase?.date ?? ""],
-    enabled: !!purchase?.date,
+    queryKey: ["price-history", id],
     queryFn: async () => {
       const { data: ps, error: e1 } = await supabase
         .from("purchases")
         .select("id, name, date")
-        .neq("id", id)
-        .lte("date", purchase!.date);
+        .neq("id", id);
       if (e1) throw e1;
       const ids = (ps ?? []).map((p) => p.id);
       if (ids.length === 0) return [] as HistoryHit[];
@@ -163,22 +184,44 @@ function PurchaseDetailPage() {
     },
   });
 
-  // For a given item name, find the most recent prior occurrence (by date).
-  const findPrev = useMemo(() => {
-    return (rawName: string): HistoryHit | undefined => {
-      const key = normalizeName(rawName);
-      if (!key) return undefined;
-      let best: HistoryHit | undefined;
-      for (const h of history) {
-        const n = normalizeName(h.name);
-        if (!n) continue;
-        if (n === key || n.includes(key) || key.includes(n)) {
-          if (!best || h.date > best.date) best = h;
-        }
+  // Para um nome, devolve { last: mais recente, cheapest: menor preço }.
+  const matchHistory = useMemo(() => {
+    return (rawName: string): { last?: HistoryHit; cheapest?: HistoryHit } => {
+      if (!rawName?.trim()) return {};
+      const matches = history.filter((h) => similar(rawName, h.name));
+      if (matches.length === 0) return {};
+      let last = matches[0];
+      let cheapest = matches[0];
+      for (const h of matches) {
+        if (h.date > last.date) last = h;
+        if (h.price < cheapest.price) cheapest = h;
       }
-      return best;
+      return { last, cheapest };
     };
   }, [history]);
+
+  // Carrega perfis dos autores que aparecem na lista.
+  const authorIds = useMemo(
+    () => Array.from(new Set(items.map((it) => it.created_by).filter(Boolean) as string[])),
+    [items],
+  );
+  const { data: authors = [] } = useQuery({
+    queryKey: ["authors", authorIds.sort().join(",")],
+    enabled: authorIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, name, icon, color")
+        .in("id", authorIds);
+      if (error) throw error;
+      return (data ?? []) as Author[];
+    },
+  });
+  const authorsById = useMemo(() => {
+    const m = new Map<string, Author>();
+    authors.forEach((a) => m.set(a.id, a));
+    return m;
+  }, [authors]);
 
   const total = useMemo(
     () => items.reduce((acc, it) => acc + (it.quantity || 0) * (it.price || 0), 0),
@@ -190,7 +233,14 @@ function PurchaseDetailPage() {
       const position = items.length;
       const { error } = await supabase
         .from("purchase_items")
-        .insert({ purchase_id: id, quantity: 1, name: "", price: 0, position });
+        .insert({
+          purchase_id: id,
+          quantity: 1,
+          name: "",
+          price: 0,
+          position,
+          created_by: profileId,
+        });
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["items", id] }),
@@ -210,9 +260,7 @@ function PurchaseDetailPage() {
 
   const jumpToItem = (itemId: string) => {
     const el = itemRefs.current[itemId];
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
     setHighlightId(itemId);
     window.setTimeout(() => setHighlightId((cur) => (cur === itemId ? null : cur)), 2200);
   };
@@ -238,9 +286,9 @@ function PurchaseDetailPage() {
         <div className="mx-auto max-w-4xl px-3 py-3">
           <div className="sticky top-0 z-[1] mb-2 flex items-center gap-2 rounded-xl bg-muted/70 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
             <div className="w-16 shrink-0">Qtd</div>
-            <div className="min-w-[200px] flex-1">Produto</div>
-            <div className="w-28 shrink-0 text-right">Valor</div>
-            <div className="w-28 shrink-0 text-right">Subtotal</div>
+            <div className="min-w-[180px] flex-1">Produto</div>
+            <div className="w-24 shrink-0 text-right">Valor</div>
+            <div className="w-24 shrink-0 text-right">Subtotal</div>
             <div className="w-9 shrink-0" />
           </div>
 
@@ -250,18 +298,23 @@ function PurchaseDetailPage() {
             </p>
           ) : (
             <ul className="space-y-2">
-              {items.map((item) => (
-                <ItemRow
-                  key={item.id}
-                  item={item}
-                  purchaseId={id}
-                  highlighted={highlightId === item.id}
-                  prev={findPrev(item.name)}
-                  rowRef={(el) => {
-                    itemRefs.current[item.id] = el;
-                  }}
-                />
-              ))}
+              {items.map((item) => {
+                const m = matchHistory(item.name);
+                return (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    purchaseId={id}
+                    highlighted={highlightId === item.id}
+                    prev={m.last}
+                    cheapest={m.cheapest}
+                    author={item.created_by ? authorsById.get(item.created_by) : undefined}
+                    rowRef={(el) => {
+                      itemRefs.current[item.id] = el;
+                    }}
+                  />
+                );
+              })}
             </ul>
           )}
 
@@ -305,6 +358,7 @@ function PurchaseDetailPage() {
       <PreListDialog
         open={preOpen}
         onOpenChange={setPreOpen}
+        groupKey={groupKey}
         purchaseId={id}
         items={items.map((it) => ({ id: it.id, name: it.name, quantity: it.quantity }))}
         onJumpToItem={jumpToItem}
@@ -331,12 +385,14 @@ function PurchaseHeader({
   const [confirmDel, setConfirmDel] = useState(false);
 
   const [budgetText, setBudgetText] = useState(
-    purchase.budget ? String(purchase.budget).replace(".", ",") : "",
+    purchase.budget ? formatMoneyInput(String(Math.round(purchase.budget * 100))) : "",
   );
   const [dateText, setDateText] = useState(purchase.date);
 
   useEffect(() => {
-    setBudgetText(purchase.budget ? String(purchase.budget).replace(".", ",") : "");
+    setBudgetText(
+      purchase.budget ? formatMoneyInput(String(Math.round(purchase.budget * 100))) : "",
+    );
   }, [purchase.budget]);
   useEffect(() => {
     setDateText(purchase.date);
@@ -353,22 +409,20 @@ function PurchaseHeader({
 
   const navigate = useNavigate();
 
-  // Mudar a data NÃO altera a lista atual. Em vez disso, cada data é uma
-  // "compra" independente (mesmo nome/ícone). Procuramos uma compra existente
-  // com o mesmo nome nesta data; se não houver, criamos uma nova (copiando a
-  // pré-lista) e navegamos para ela. A lista antiga permanece intacta.
+  // Mudar a data NÃO altera a lista atual. Cada data é uma "compra"
+  // independente (mesmo group_key). Se já existir uma com a mesma data, navega
+  // para ela; senão, cria nova herdando nome/ícone/orçamento.
   const saveDate = async (value: string) => {
     if (!value || value === purchase.date) return;
     const nameKey = normalizeName(purchase.name);
 
-    // Buscar compras nessa data com nome similar (case/acento-insensível).
     const { data: candidates } = await supabase
       .from("purchases")
-      .select("id, name, date")
+      .select("id, name, date, group_key")
       .eq("date", value);
 
     const match = (candidates ?? []).find(
-      (c) => normalizeName(c.name as string) === nameKey,
+      (c) => (c.group_key || normalizeName(c.name as string)) === nameKey,
     );
 
     if (match && match.id !== purchase.id) {
@@ -376,7 +430,6 @@ function PurchaseHeader({
       return;
     }
 
-    // Criar nova compra para essa data, herdando nome/ícone/orçamento.
     const { data: created, error } = await supabase
       .from("purchases")
       .insert({
@@ -389,37 +442,27 @@ function PurchaseHeader({
       .single();
     if (error || !created) return;
 
-    // Copiar pré-lista (anotações) para a nova data.
-    const { data: pre } = await supabase
-      .from("pre_list_items")
-      .select("quantity, name, position")
-      .eq("purchase_id", purchase.id);
-    if (pre && pre.length > 0) {
-      await supabase.from("pre_list_items").insert(
-        pre.map((p) => ({
-          purchase_id: created.id as string,
-          quantity: p.quantity,
-          name: p.name,
-          position: p.position,
-        })),
-      );
-    }
-
     qc.invalidateQueries({ queryKey: ["purchases"] });
     navigate({ to: "/compra/$id", params: { id: created.id as string } });
   };
 
-  // Buscar todas as datas com registro do mesmo nome de compra (para marcar no calendário).
-  useRealtime("date-marks", "purchases", [["purchase-dates", normalizeName(purchase.name)]]);
+  // Datas com registro do mesmo grupo (marcação no calendário).
+  useRealtime(
+    "date-marks",
+    "purchases",
+    [["purchase-dates", normalizeName(purchase.name)]],
+  );
   const nameKey = normalizeName(purchase.name);
   const { data: markedDates = [] } = useQuery({
     queryKey: ["purchase-dates", nameKey],
     enabled: !!nameKey,
     queryFn: async () => {
-      const { data, error } = await supabase.from("purchases").select("name, date");
+      const { data, error } = await supabase
+        .from("purchases")
+        .select("name, date, group_key");
       if (error) throw error;
       return (data ?? [])
-        .filter((p) => normalizeName(p.name as string) === nameKey)
+        .filter((p) => (p.group_key || normalizeName(p.name as string)) === nameKey)
         .map((p) => p.date as string);
     },
   });
@@ -512,11 +555,12 @@ function PurchaseHeader({
                 R$
               </span>
               <Input
-                inputMode="decimal"
+                inputMode="numeric"
                 value={budgetText}
                 onChange={(e) => {
-                  setBudgetText(e.target.value);
-                  saveBudget(e.target.value);
+                  const v = formatMoneyInput(e.target.value);
+                  setBudgetText(v);
+                  saveBudget(v);
                 }}
                 placeholder="0,00"
                 className="h-11 rounded-xl pl-9 text-base font-semibold tabular-nums"
@@ -681,12 +725,16 @@ function ItemRow({
   purchaseId,
   highlighted,
   prev,
+  cheapest,
+  author,
   rowRef,
 }: {
   item: Item;
   purchaseId: string;
   highlighted?: boolean;
   prev?: HistoryHit;
+  cheapest?: HistoryHit;
+  author?: Author;
   rowRef?: (el: HTMLLIElement | null) => void;
 }) {
   const qc = useQueryClient();
@@ -696,9 +744,10 @@ function ItemRow({
   );
   const [name, setName] = useState(item.name);
   const [price, setPrice] = useState(
-    item.price ? String(item.price).replace(".", ",") : "",
+    item.price ? formatMoneyInput(String(Math.round(item.price * 100))) : "",
   );
   const [compareOpen, setCompareOpen] = useState(false);
+  const [authorOpen, setAuthorOpen] = useState(false);
 
   useEffect(() => {
     if (document.activeElement?.getAttribute("data-item-id") !== item.id + ":qty") {
@@ -708,7 +757,7 @@ function ItemRow({
       setName(item.name);
     }
     if (document.activeElement?.getAttribute("data-item-id") !== item.id + ":price") {
-      setPrice(item.price ? String(item.price).replace(".", ",") : "");
+      setPrice(item.price ? formatMoneyInput(String(Math.round(item.price * 100))) : "");
     }
   }, [item.quantity, item.name, item.price, item.id]);
 
@@ -720,7 +769,7 @@ function ItemRow({
         .eq("id", item.id);
       if (!error) qc.invalidateQueries({ queryKey: ["items", purchaseId] });
     },
-    300,
+    400,
   );
 
   const remove = useMutation({
@@ -734,10 +783,7 @@ function ItemRow({
     onSuccess: () => qc.invalidateQueries({ queryKey: ["items", purchaseId] }),
   });
 
-  const subtotal =
-    (parseNumber(qty) || 0) * (parseNumber(price) || 0);
-
-  // Comparison uses persisted price (item.price) so the color settles after typing.
+  const subtotal = (parseNumber(qty) || 0) * (parseNumber(price) || 0);
   const cmp = compareTo(item.price, prev);
   const cmpBorder =
     cmp === "cheaper"
@@ -748,10 +794,16 @@ function ItemRow({
           ? "border-destructive ring-2 ring-destructive/40"
           : "border-border";
 
-  // Long-press (touch + mouse) opens the comparison modal.
+  // Validação visual: nome preenchido mas qty/preço zerados.
+  const nameFilled = item.name.trim().length > 0;
+  const missingQty = nameFilled && (!item.quantity || item.quantity <= 0);
+  const missingPrice = nameFilled && (!item.price || item.price <= 0);
+  const hasWarning = missingQty || missingPrice;
+
+  // Long-press (touch + mouse) abre comparação.
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startPress = () => {
-    if (!prev) return;
+    if (!prev && !cheapest) return;
     if (pressTimer.current) clearTimeout(pressTimer.current);
     pressTimer.current = setTimeout(() => setCompareOpen(true), 500);
   };
@@ -763,11 +815,13 @@ function ItemRow({
   };
   useEffect(() => () => cancelPress(), []);
 
+  const AuthorIcon = author ? getIcon(author.icon) : null;
+
   return (
     <li
       ref={rowRef}
       onContextMenu={(e) => {
-        if (prev) {
+        if (prev || cheapest) {
           e.preventDefault();
           setCompareOpen(true);
         }
@@ -780,114 +834,174 @@ function ItemRow({
       }}
       onPointerUp={cancelPress}
       onPointerLeave={cancelPress}
-      className={`flex items-center gap-2 rounded-2xl border bg-card px-2 py-2 shadow-sm transition-all ${
+      className={`flex flex-col gap-1 rounded-2xl border bg-card px-2 py-2 shadow-sm transition-all ${
         highlighted
           ? "border-primary ring-2 ring-primary/40 scale-[1.01]"
           : cmpBorder
       }`}
     >
-      <Input
-        data-item-id={item.id + ":qty"}
-        inputMode="decimal"
-        value={qty}
-        onChange={(e) => {
-          setQty(e.target.value);
-          persist({ quantity: parseNumber(e.target.value) });
-        }}
-        placeholder="1"
-        className="h-10 w-16 shrink-0 rounded-xl px-2 text-center text-base tabular-nums"
-      />
-      <Input
-        data-item-id={item.id + ":name"}
-        value={name}
-        onChange={(e) => {
-          setName(e.target.value);
-          persist({ name: e.target.value.slice(0, 200) });
-        }}
-        placeholder="Nome do produto"
-        className="h-10 min-w-[200px] flex-1 rounded-xl text-base"
-      />
-      <Input
-        data-item-id={item.id + ":price"}
-        inputMode="decimal"
-        value={price}
-        onChange={(e) => {
-          setPrice(e.target.value);
-          persist({ price: parseNumber(e.target.value) });
-        }}
-        placeholder="0,00"
-        className="h-10 w-28 shrink-0 rounded-xl text-right text-base tabular-nums"
-      />
-      <div className="w-28 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
-        {formatBRL(subtotal)}
+      <div className="flex items-center gap-2">
+        <Input
+          data-item-id={item.id + ":qty"}
+          inputMode="decimal"
+          value={qty}
+          onChange={(e) => {
+            const v = formatQtyInput(e.target.value);
+            setQty(v);
+            persist({ quantity: parseNumber(v) });
+          }}
+          placeholder="1"
+          className={`h-10 w-16 shrink-0 rounded-xl px-2 text-center text-base tabular-nums ${
+            missingQty ? "border-destructive ring-2 ring-destructive/40 bg-destructive/5" : ""
+          }`}
+        />
+        <Input
+          data-item-id={item.id + ":name"}
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            persist({ name: e.target.value.slice(0, 200) });
+          }}
+          placeholder="Nome do produto"
+          className="h-10 min-w-[180px] flex-1 rounded-xl text-base"
+        />
+        <Input
+          data-item-id={item.id + ":price"}
+          inputMode="numeric"
+          value={price}
+          onChange={(e) => {
+            const v = formatMoneyInput(e.target.value);
+            setPrice(v);
+            persist({ price: parseNumber(v) });
+          }}
+          placeholder="0,00"
+          className={`h-10 w-24 shrink-0 rounded-xl text-right text-base tabular-nums ${
+            missingPrice ? "border-destructive ring-2 ring-destructive/40 bg-destructive/5" : ""
+          }`}
+        />
+        <div className="w-24 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
+          {formatBRL(subtotal)}
+        </div>
+        <button
+          onClick={() => remove.mutate()}
+          aria-label="Remover item"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
-      <button
-        onClick={() => remove.mutate()}
-        aria-label="Remover item"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+
+      {(hasWarning || author) && (
+        <div className="flex items-center justify-between gap-2 pl-1 pr-1">
+          <div className="min-w-0 flex-1">
+            {hasWarning && (
+              <p className="truncate text-[11px] font-medium text-destructive">
+                ⚠ Faltam:{" "}
+                {missingQty && missingPrice
+                  ? "quantidade e valor"
+                  : missingQty
+                    ? "quantidade"
+                    : "valor"}
+                . Você pode preencher depois.
+              </p>
+            )}
+          </div>
+          {author && AuthorIcon && (
+            <button
+              type="button"
+              onClick={() => setAuthorOpen((v) => !v)}
+              aria-label={`Adicionado por ${author.name}`}
+              className="flex h-6 shrink-0 items-center gap-1 rounded-full px-1.5 text-[11px] font-medium text-white shadow-sm transition-all active:scale-95"
+              style={{ backgroundColor: author.color || "#3b82f6" }}
+            >
+              <AuthorIcon className="h-3.5 w-3.5" />
+              {authorOpen && <span className="px-0.5">{author.name}</span>}
+            </button>
+          )}
+        </div>
+      )}
 
       <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
         <DialogContent className="rounded-3xl sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="truncate">{item.name || "Produto"}</DialogTitle>
             <DialogDescription>
-              Comparação com a compra anterior mais próxima.
+              Comparação com o histórico de todas as compras.
             </DialogDescription>
           </DialogHeader>
-          {prev ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl bg-muted/60 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Anterior
-                </p>
-                <p className="mt-1 text-xl font-bold tabular-nums">
-                  {formatBRL(prev.price)}
-                </p>
-                <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {prev.purchaseName} · {formatShortDate(prev.date)}
-                </p>
-                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                  {prev.name}
-                </p>
-              </div>
-              <div
-                className={`rounded-2xl p-3 ${
-                  cmp === "cheaper"
-                    ? "bg-success/10"
-                    : cmp === "more"
-                      ? "bg-destructive/10"
-                      : cmp === "same"
-                        ? "bg-warning/10"
-                        : "bg-muted/60"
-                }`}
-              >
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Atual
-                </p>
-                <p
-                  className={`mt-1 text-xl font-bold tabular-nums ${
+          {prev || cheapest ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-muted/60 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Último preço
+                  </p>
+                  <p className="mt-1 text-xl font-bold tabular-nums">
+                    {prev ? formatBRL(prev.price) : "—"}
+                  </p>
+                  {prev && (
+                    <>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {prev.purchaseName} · {formatShortDate(prev.date)}
+                      </p>
+                      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                        {prev.name}
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div
+                  className={`rounded-2xl p-3 ${
                     cmp === "cheaper"
-                      ? "text-success"
+                      ? "bg-success/10"
                       : cmp === "more"
-                        ? "text-destructive"
-                        : "text-foreground"
+                        ? "bg-destructive/10"
+                        : cmp === "same"
+                          ? "bg-warning/10"
+                          : "bg-muted/60"
                   }`}
                 >
-                  {formatBRL(item.price)}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {cmp === "cheaper"
-                    ? "Mais barato 🎉"
-                    : cmp === "more"
-                      ? `+${formatBRL(item.price - prev.price)} mais caro`
-                      : cmp === "same"
-                        ? "Mesmo preço"
-                        : "Sem preço informado"}
-                </p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Atual
+                  </p>
+                  <p
+                    className={`mt-1 text-xl font-bold tabular-nums ${
+                      cmp === "cheaper"
+                        ? "text-success"
+                        : cmp === "more"
+                          ? "text-destructive"
+                          : "text-foreground"
+                    }`}
+                  >
+                    {formatBRL(item.price)}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {cmp === "cheaper"
+                      ? "Mais barato 🎉"
+                      : cmp === "more"
+                        ? `+${formatBRL(item.price - (prev?.price ?? 0))} mais caro`
+                        : cmp === "same"
+                          ? "Mesmo preço"
+                          : "Sem preço informado"}
+                  </p>
+                </div>
               </div>
+
+              {cheapest && (
+                <div className="rounded-2xl border border-success/30 bg-success/5 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-success">
+                    Menor preço já registrado
+                  </p>
+                  <div className="mt-1 flex items-baseline justify-between gap-3">
+                    <p className="text-lg font-bold tabular-nums text-success">
+                      {formatBRL(cheapest.price)}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {cheapest.purchaseName} · {formatShortDate(cheapest.date)}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
