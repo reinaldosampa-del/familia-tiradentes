@@ -392,11 +392,13 @@ function PurchaseHeader({
   total,
   onDelete,
   onOpenPreList,
+  onOpenCalc,
 }: {
   purchase: Purchase;
   total: number;
   onDelete: () => void;
   onOpenPreList: () => void;
+  onOpenCalc: () => void;
 }) {
   const qc = useQueryClient();
   const Icon = getIcon(purchase.icon);
