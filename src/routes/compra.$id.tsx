@@ -381,6 +381,8 @@ function PurchaseDetailPage() {
         items={items.map((it) => ({ id: it.id, name: it.name, quantity: it.quantity }))}
         onJumpToItem={jumpToItem}
       />
+
+      <PriceCalculatorDialog open={calcOpen} onOpenChange={setCalcOpen} />
     </div>
   );
 }
