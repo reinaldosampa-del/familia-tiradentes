@@ -9,12 +9,14 @@ import {
   Pencil,
   ListChecks,
   CalendarIcon,
+  Calculator,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { useProfile } from "@/hooks/useProfile";
 import { PreListDialog } from "@/components/PreListDialog";
+import { PriceCalculatorDialog } from "@/components/PriceCalculatorDialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
