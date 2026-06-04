@@ -536,6 +536,14 @@ function PurchaseHeader({
           </div>
 
           <button
+            onClick={onOpenCalc}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+            aria-label="Calculadora"
+          >
+            <Calculator className="h-4 w-4" />
+          </button>
+
+          <button
             onClick={onOpenPreList}
             className="flex h-10 items-center gap-1.5 rounded-full bg-primary/10 px-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/20"
             aria-label="Abrir pré-lista"
