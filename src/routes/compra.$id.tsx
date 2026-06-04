@@ -9,12 +9,14 @@ import {
   Pencil,
   ListChecks,
   CalendarIcon,
+  Calculator,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { useProfile } from "@/hooks/useProfile";
 import { PreListDialog } from "@/components/PreListDialog";
+import { PriceCalculatorDialog } from "@/components/PriceCalculatorDialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -51,6 +53,7 @@ type HistoryHit = {
   name: string;
   purchaseName: string;
   date: string;
+  groupKey: string | null;
 };
 
 type Compare = "cheaper" | "same" | "more" | "none";
@@ -158,7 +161,7 @@ function PurchaseDetailPage() {
     queryFn: async () => {
       const { data: ps, error: e1 } = await supabase
         .from("purchases")
-        .select("id, name, date")
+        .select("id, name, date, group_key")
         .neq("id", id);
       if (e1) throw e1;
       const ids = (ps ?? []).map((p) => p.id);
@@ -178,27 +181,38 @@ function PurchaseDetailPage() {
             name: it.name as string,
             purchaseName: (p.name as string) || "Sem nome",
             date: p.date as string,
+            groupKey:
+              (p.group_key as string | null) ||
+              normalizeName(p.name as string),
           };
         })
         .filter((h) => h.name && h.name.trim().length > 0) as HistoryHit[];
     },
   });
 
-  // Para um nome, devolve { last: mais recente, cheapest: menor preço }.
+  const currentGroupKey = groupKey;
+
+  // Para um nome devolve: último geral, último do mesmo mercado e o mais barato.
   const matchHistory = useMemo(() => {
-    return (rawName: string): { last?: HistoryHit; cheapest?: HistoryHit } => {
+    return (
+      rawName: string,
+    ): { last?: HistoryHit; lastSameMarket?: HistoryHit; cheapest?: HistoryHit } => {
       if (!rawName?.trim()) return {};
       const matches = history.filter((h) => similar(rawName, h.name));
       if (matches.length === 0) return {};
       let last = matches[0];
       let cheapest = matches[0];
+      let lastSameMarket: HistoryHit | undefined;
       for (const h of matches) {
         if (h.date > last.date) last = h;
         if (h.price < cheapest.price) cheapest = h;
+        if (h.groupKey && h.groupKey === currentGroupKey) {
+          if (!lastSameMarket || h.date > lastSameMarket.date) lastSameMarket = h;
+        }
       }
-      return { last, cheapest };
+      return { last, lastSameMarket, cheapest };
     };
-  }, [history]);
+  }, [history, currentGroupKey]);
 
   // Carrega perfis dos autores que aparecem na lista.
   const authorIds = useMemo(
@@ -255,6 +269,7 @@ function PurchaseDetailPage() {
   });
 
   const [preOpen, setPreOpen] = useState(false);
+  const [calcOpen, setCalcOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const itemRefs = useRef<Record<string, HTMLLIElement | null>>({});
 
@@ -280,7 +295,9 @@ function PurchaseDetailPage() {
         total={total}
         onDelete={() => deletePurchase.mutate()}
         onOpenPreList={() => setPreOpen(true)}
+        onOpenCalc={() => setCalcOpen(true)}
       />
+
 
       <main className="flex-1 overflow-auto">
         <div className="mx-auto max-w-4xl px-3 py-3">
@@ -307,6 +324,7 @@ function PurchaseDetailPage() {
                     purchaseId={id}
                     highlighted={highlightId === item.id}
                     prev={m.last}
+                    lastSameMarket={m.lastSameMarket}
                     cheapest={m.cheapest}
                     author={item.created_by ? authorsById.get(item.created_by) : undefined}
                     rowRef={(el) => {
@@ -363,6 +381,8 @@ function PurchaseDetailPage() {
         items={items.map((it) => ({ id: it.id, name: it.name, quantity: it.quantity }))}
         onJumpToItem={jumpToItem}
       />
+
+      <PriceCalculatorDialog open={calcOpen} onOpenChange={setCalcOpen} />
     </div>
   );
 }
@@ -372,11 +392,13 @@ function PurchaseHeader({
   total,
   onDelete,
   onOpenPreList,
+  onOpenCalc,
 }: {
   purchase: Purchase;
   total: number;
   onDelete: () => void;
   onOpenPreList: () => void;
+  onOpenCalc: () => void;
 }) {
   const qc = useQueryClient();
   const Icon = getIcon(purchase.icon);
@@ -512,6 +534,14 @@ function PurchaseHeader({
               Itens: {formatBRL(total)}
             </p>
           </div>
+
+          <button
+            onClick={onOpenCalc}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary transition-colors hover:bg-primary/20"
+            aria-label="Calculadora"
+          >
+            <Calculator className="h-4 w-4" />
+          </button>
 
           <button
             onClick={onOpenPreList}
@@ -725,6 +755,7 @@ function ItemRow({
   purchaseId,
   highlighted,
   prev,
+  lastSameMarket,
   cheapest,
   author,
   rowRef,
@@ -733,6 +764,7 @@ function ItemRow({
   purchaseId: string;
   highlighted?: boolean;
   prev?: HistoryHit;
+  lastSameMarket?: HistoryHit;
   cheapest?: HistoryHit;
   author?: Author;
   rowRef?: (el: HTMLLIElement | null) => void;
@@ -986,6 +1018,22 @@ function ItemRow({
                   </p>
                 </div>
               </div>
+
+              {lastSameMarket && (
+                <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                    Último preço neste mercado
+                  </p>
+                  <div className="mt-1 flex items-baseline justify-between gap-3">
+                    <p className="text-lg font-bold tabular-nums text-primary">
+                      {formatBRL(lastSameMarket.price)}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {formatShortDate(lastSameMarket.date)}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {cheapest && (
                 <div className="rounded-2xl border border-success/30 bg-success/5 p-3">
