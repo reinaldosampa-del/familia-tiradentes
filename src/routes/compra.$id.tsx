@@ -53,6 +53,7 @@ type HistoryHit = {
   name: string;
   purchaseName: string;
   date: string;
+  groupKey: string | null;
 };
 
 type Compare = "cheaper" | "same" | "more" | "none";
