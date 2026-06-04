@@ -161,7 +161,7 @@ function PurchaseDetailPage() {
     queryFn: async () => {
       const { data: ps, error: e1 } = await supabase
         .from("purchases")
-        .select("id, name, date")
+        .select("id, name, date, group_key")
         .neq("id", id);
       if (e1) throw e1;
       const ids = (ps ?? []).map((p) => p.id);
@@ -181,27 +181,38 @@ function PurchaseDetailPage() {
             name: it.name as string,
             purchaseName: (p.name as string) || "Sem nome",
             date: p.date as string,
+            groupKey:
+              (p.group_key as string | null) ||
+              normalizeName(p.name as string),
           };
         })
         .filter((h) => h.name && h.name.trim().length > 0) as HistoryHit[];
     },
   });
 
-  // Para um nome, devolve { last: mais recente, cheapest: menor preço }.
+  const currentGroupKey = groupKey;
+
+  // Para um nome devolve: último geral, último do mesmo mercado e o mais barato.
   const matchHistory = useMemo(() => {
-    return (rawName: string): { last?: HistoryHit; cheapest?: HistoryHit } => {
+    return (
+      rawName: string,
+    ): { last?: HistoryHit; lastSameMarket?: HistoryHit; cheapest?: HistoryHit } => {
       if (!rawName?.trim()) return {};
       const matches = history.filter((h) => similar(rawName, h.name));
       if (matches.length === 0) return {};
       let last = matches[0];
       let cheapest = matches[0];
+      let lastSameMarket: HistoryHit | undefined;
       for (const h of matches) {
         if (h.date > last.date) last = h;
         if (h.price < cheapest.price) cheapest = h;
+        if (h.groupKey && h.groupKey === currentGroupKey) {
+          if (!lastSameMarket || h.date > lastSameMarket.date) lastSameMarket = h;
+        }
       }
-      return { last, cheapest };
+      return { last, lastSameMarket, cheapest };
     };
-  }, [history]);
+  }, [history, currentGroupKey]);
 
   // Carrega perfis dos autores que aparecem na lista.
   const authorIds = useMemo(
