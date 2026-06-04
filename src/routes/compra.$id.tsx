@@ -755,6 +755,7 @@ function ItemRow({
   purchaseId,
   highlighted,
   prev,
+  lastSameMarket,
   cheapest,
   author,
   rowRef,
@@ -763,6 +764,7 @@ function ItemRow({
   purchaseId: string;
   highlighted?: boolean;
   prev?: HistoryHit;
+  lastSameMarket?: HistoryHit;
   cheapest?: HistoryHit;
   author?: Author;
   rowRef?: (el: HTMLLIElement | null) => void;
