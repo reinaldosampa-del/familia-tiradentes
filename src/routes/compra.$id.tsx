@@ -1019,6 +1019,22 @@ function ItemRow({
                 </div>
               </div>
 
+              {lastSameMarket && (
+                <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                    Último preço neste mercado
+                  </p>
+                  <div className="mt-1 flex items-baseline justify-between gap-3">
+                    <p className="text-lg font-bold tabular-nums text-primary">
+                      {formatBRL(lastSameMarket.price)}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {formatShortDate(lastSameMarket.date)}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {cheapest && (
                 <div className="rounded-2xl border border-success/30 bg-success/5 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-success">
