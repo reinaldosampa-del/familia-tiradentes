@@ -269,6 +269,7 @@ function PurchaseDetailPage() {
   });
 
   const [preOpen, setPreOpen] = useState(false);
+  const [calcOpen, setCalcOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const itemRefs = useRef<Record<string, HTMLLIElement | null>>({});
 
@@ -294,7 +295,9 @@ function PurchaseDetailPage() {
         total={total}
         onDelete={() => deletePurchase.mutate()}
         onOpenPreList={() => setPreOpen(true)}
+        onOpenCalc={() => setCalcOpen(true)}
       />
+
 
       <main className="flex-1 overflow-auto">
         <div className="mx-auto max-w-4xl px-3 py-3">
