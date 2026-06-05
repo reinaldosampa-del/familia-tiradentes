@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      brands: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          normalized: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          normalized: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          normalized?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       pre_list_items: {
         Row: {
           created_at: string
@@ -84,37 +108,64 @@ export type Database = {
       }
       purchase_items: {
         Row: {
+          brand: string | null
           created_at: string
           created_by: string | null
           id: string
+          items_per_pack: number | null
+          length_m: number | null
           name: string
+          pack_qty: number | null
+          pack_size: number | null
+          pack_size_unit: string | null
           position: number
           price: number
           purchase_id: string
           quantity: number
+          rolls: number | null
+          unit_kind: string | null
           updated_at: string
+          width_cm: number | null
         }
         Insert: {
+          brand?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
+          items_per_pack?: number | null
+          length_m?: number | null
           name?: string
+          pack_qty?: number | null
+          pack_size?: number | null
+          pack_size_unit?: string | null
           position?: number
           price?: number
           purchase_id: string
           quantity?: number
+          rolls?: number | null
+          unit_kind?: string | null
           updated_at?: string
+          width_cm?: number | null
         }
         Update: {
+          brand?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
+          items_per_pack?: number | null
+          length_m?: number | null
           name?: string
+          pack_qty?: number | null
+          pack_size?: number | null
+          pack_size_unit?: string | null
           position?: number
           price?: number
           purchase_id?: string
           quantity?: number
+          rolls?: number | null
+          unit_kind?: string | null
           updated_at?: string
+          width_cm?: number | null
         }
         Relationships: [
           {
