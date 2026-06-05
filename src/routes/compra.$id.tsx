@@ -60,12 +60,40 @@ type HistoryHit = {
   purchaseName: string;
   date: string;
   groupKey: string | null;
+  quantity: number;
+  brand: string | null;
+  unit_kind: string | null;
+  pack_qty: number | null;
+  pack_size: number | null;
+  pack_size_unit: string | null;
+  items_per_pack: number | null;
+  rolls: number | null;
+  width_cm: number | null;
+  length_m: number | null;
+  normalized: NormalizedPrice | null;
 };
 
 type Compare = "cheaper" | "same" | "more" | "none";
 
-function compareTo(currentPrice: number, prev?: HistoryHit): Compare {
-  if (!prev || !(prev.price > 0) || !(currentPrice > 0)) return "none";
+/**
+ * Comparação inteligente: se atual e anterior tiverem preço normalizado
+ * (R$/kg, R$/L, R$/un, R$/m²) do mesmo tipo, compara o per-unit. Caso
+ * contrário, usa preço absoluto.
+ */
+function compareTo(
+  currentPrice: number,
+  prev?: HistoryHit,
+  currentNorm?: NormalizedPrice | null,
+): Compare {
+  if (!prev) return "none";
+  if (currentNorm && prev.normalized && currentNorm.kind === prev.normalized.kind) {
+    const a = Math.round(currentNorm.perUnit * 10000);
+    const b = Math.round(prev.normalized.perUnit * 10000);
+    if (a < b) return "cheaper";
+    if (a > b) return "more";
+    return "same";
+  }
+  if (!(prev.price > 0) || !(currentPrice > 0)) return "none";
   const a = Math.round(currentPrice * 100);
   const b = Math.round(prev.price * 100);
   if (a < b) return "cheaper";
