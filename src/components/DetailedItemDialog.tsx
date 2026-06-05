@@ -119,7 +119,7 @@ export function DetailedItemDialog({
           await supabase.from("brands").insert({ name: brand.trim().slice(0, 60), normalized: nb });
         }
       }
-      const update: Record<string, unknown> = {
+      const update = {
         unit_kind: kind,
         brand: brand.trim() || null,
         pack_qty: parseNumber(packQty) || null,
