@@ -962,10 +962,8 @@ function ItemRow({
     <li
       ref={rowRef}
       onContextMenu={(e) => {
-        if (prev || cheapest) {
-          e.preventDefault();
-          setCompareOpen(true);
-        }
+        e.preventDefault();
+        setActionsOpen(true);
       }}
       onTouchStart={startPress}
       onTouchEnd={cancelPress}
@@ -981,7 +979,19 @@ function ItemRow({
           : cmpBorder
       }`}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setDetailedOpen(true)}
+          aria-label="Cadastro detalhado"
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+            isDetailed
+              ? "bg-primary/15 text-primary"
+              : "text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          <Settings2 className="h-4 w-4" />
+        </button>
         <Input
           data-item-id={item.id + ":qty"}
           inputMode="decimal"
@@ -992,7 +1002,7 @@ function ItemRow({
             persist({ quantity: parseNumber(v) });
           }}
           placeholder="1"
-          className={`h-10 w-16 shrink-0 rounded-xl px-2 text-center text-base tabular-nums ${
+          className={`h-10 w-14 shrink-0 rounded-xl px-1 text-center text-base tabular-nums ${
             missingQty ? "border-destructive ring-2 ring-destructive/40 bg-destructive/5" : ""
           }`}
         />
@@ -1003,8 +1013,9 @@ function ItemRow({
             setName(e.target.value);
             persist({ name: e.target.value.slice(0, 200) });
           }}
+          onBlur={handleNameBlur}
           placeholder="Nome do produto"
-          className="h-10 min-w-[180px] flex-1 rounded-xl text-base"
+          className="h-10 min-w-[140px] flex-1 rounded-xl text-base"
         />
         <Input
           data-item-id={item.id + ":price"}
@@ -1016,13 +1027,22 @@ function ItemRow({
             persist({ price: parseNumber(v) });
           }}
           placeholder="0,00"
-          className={`h-10 w-24 shrink-0 rounded-xl text-right text-base tabular-nums ${
+          className={`h-10 w-20 shrink-0 rounded-xl text-right text-base tabular-nums ${
             missingPrice ? "border-destructive ring-2 ring-destructive/40 bg-destructive/5" : ""
           }`}
         />
-        <div className="w-24 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
+        <div className="w-20 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
           {formatBRL(subtotal)}
         </div>
+        <button
+          type="button"
+          onClick={() => setCompareOpen(true)}
+          aria-label="Comparar preço"
+          disabled={!prev && !cheapest}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary disabled:opacity-30"
+        >
+          <Scale className="h-4 w-4" />
+        </button>
         <button
           onClick={() => remove.mutate()}
           aria-label="Remover item"
