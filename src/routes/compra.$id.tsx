@@ -143,6 +143,15 @@ type Item = {
   price: number;
   position: number;
   created_by: string | null;
+  brand: string | null;
+  unit_kind: string | null;
+  pack_qty: number | null;
+  pack_size: number | null;
+  pack_size_unit: string | null;
+  items_per_pack: number | null;
+  rolls: number | null;
+  width_cm: number | null;
+  length_m: number | null;
 };
 
 type Author = { id: string; name: string; icon: string; color: string };
