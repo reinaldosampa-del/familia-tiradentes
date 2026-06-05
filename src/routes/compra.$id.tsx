@@ -176,7 +176,9 @@ function PurchaseDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("purchase_items")
-        .select("id, purchase_id, quantity, name, price, position, created_by")
+        .select(
+          "id, purchase_id, quantity, name, price, position, created_by, brand, unit_kind, pack_qty, pack_size, pack_size_unit, items_per_pack, rolls, width_cm, length_m",
+        )
         .eq("purchase_id", id)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true });
@@ -203,14 +205,16 @@ function PurchaseDetailPage() {
       const map = new Map(ps!.map((p) => [p.id, p]));
       const { data: its, error: e2 } = await supabase
         .from("purchase_items")
-        .select("purchase_id, name, price")
+        .select(
+          "purchase_id, name, price, quantity, brand, unit_kind, pack_qty, pack_size, pack_size_unit, items_per_pack, rolls, width_cm, length_m",
+        )
         .in("purchase_id", ids)
         .gt("price", 0);
       if (e2) throw e2;
       return (its ?? [])
         .map((it) => {
           const p = map.get(it.purchase_id)!;
-          return {
+          const hit: HistoryHit = {
             price: Number(it.price) || 0,
             name: it.name as string,
             purchaseName: (p.name as string) || "Sem nome",
@@ -218,9 +222,35 @@ function PurchaseDetailPage() {
             groupKey:
               (p.group_key as string | null) ||
               normalizeName(p.name as string),
+            quantity: Number(it.quantity) || 0,
+            brand: (it.brand as string | null) ?? null,
+            unit_kind: (it.unit_kind as string | null) ?? null,
+            pack_qty: (it.pack_qty as number | null) ?? null,
+            pack_size: (it.pack_size as number | null) ?? null,
+            pack_size_unit: (it.pack_size_unit as string | null) ?? null,
+            items_per_pack: (it.items_per_pack as number | null) ?? null,
+            rolls: (it.rolls as number | null) ?? null,
+            width_cm: (it.width_cm as number | null) ?? null,
+            length_m: (it.length_m as number | null) ?? null,
+            normalized: null,
           };
+          hit.normalized = normalizedPrice({
+            quantity: hit.quantity,
+            price: hit.price,
+            name: hit.name,
+            brand: hit.brand,
+            unit_kind: hit.unit_kind,
+            pack_qty: hit.pack_qty,
+            pack_size: hit.pack_size,
+            pack_size_unit: hit.pack_size_unit,
+            items_per_pack: hit.items_per_pack,
+            rolls: hit.rolls,
+            width_cm: hit.width_cm,
+            length_m: hit.length_m,
+          });
+          return hit;
         })
-        .filter((h) => h.name && h.name.trim().length > 0) as HistoryHit[];
+        .filter((h) => h.name && h.name.trim().length > 0);
     },
   });
 
