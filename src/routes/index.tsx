@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Plus, Tag } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useProfile } from "@/hooks/useProfile";
 import { useRealtime } from "@/hooks/useRealtime";
@@ -119,14 +119,23 @@ function PurchasesScreen({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-dvh bg-background">
       <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
-          <div>
+        <div className="mx-auto flex max-w-2xl items-center justify-between gap-2 px-4 py-3">
+          <div className="min-w-0">
             <h1 className="text-lg font-bold tracking-tight text-foreground">
               Minhas compras
             </h1>
             <p className="text-xs text-muted-foreground">Toque para abrir</p>
           </div>
-          {children}
+          <div className="flex items-center gap-2">
+            <Link
+              to="/marcas"
+              aria-label="Marcas"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+            >
+              <Tag className="h-4 w-4" />
+            </Link>
+            {children}
+          </div>
         </div>
       </header>
 
