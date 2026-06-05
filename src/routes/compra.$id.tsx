@@ -10,13 +10,18 @@ import {
   ListChecks,
   CalendarIcon,
   Calculator,
+  Settings2,
+  Scale,
+  User as UserIcon,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { useProfile } from "@/hooks/useProfile";
+import { useBrands } from "@/hooks/useBrands";
 import { PreListDialog } from "@/components/PreListDialog";
 import { PriceCalculatorDialog } from "@/components/PriceCalculatorDialog";
+import { DetailedItemDialog } from "@/components/DetailedItemDialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -47,6 +52,7 @@ import {
   parseNumber,
   similar,
 } from "@/lib/format";
+import { autoFormat, normalizedPrice, type NormalizedPrice } from "@/lib/product-parser";
 
 type HistoryHit = {
   price: number;
@@ -54,12 +60,40 @@ type HistoryHit = {
   purchaseName: string;
   date: string;
   groupKey: string | null;
+  quantity: number;
+  brand: string | null;
+  unit_kind: string | null;
+  pack_qty: number | null;
+  pack_size: number | null;
+  pack_size_unit: string | null;
+  items_per_pack: number | null;
+  rolls: number | null;
+  width_cm: number | null;
+  length_m: number | null;
+  normalized: NormalizedPrice | null;
 };
 
 type Compare = "cheaper" | "same" | "more" | "none";
 
-function compareTo(currentPrice: number, prev?: HistoryHit): Compare {
-  if (!prev || !(prev.price > 0) || !(currentPrice > 0)) return "none";
+/**
+ * Comparação inteligente: se atual e anterior tiverem preço normalizado
+ * (R$/kg, R$/L, R$/un, R$/m²) do mesmo tipo, compara o per-unit. Caso
+ * contrário, usa preço absoluto.
+ */
+function compareTo(
+  currentPrice: number,
+  prev?: HistoryHit,
+  currentNorm?: NormalizedPrice | null,
+): Compare {
+  if (!prev) return "none";
+  if (currentNorm && prev.normalized && currentNorm.kind === prev.normalized.kind) {
+    const a = Math.round(currentNorm.perUnit * 10000);
+    const b = Math.round(prev.normalized.perUnit * 10000);
+    if (a < b) return "cheaper";
+    if (a > b) return "more";
+    return "same";
+  }
+  if (!(prev.price > 0) || !(currentPrice > 0)) return "none";
   const a = Math.round(currentPrice * 100);
   const b = Math.round(prev.price * 100);
   if (a < b) return "cheaper";
@@ -109,6 +143,15 @@ type Item = {
   price: number;
   position: number;
   created_by: string | null;
+  brand: string | null;
+  unit_kind: string | null;
+  pack_qty: number | null;
+  pack_size: number | null;
+  pack_size_unit: string | null;
+  items_per_pack: number | null;
+  rolls: number | null;
+  width_cm: number | null;
+  length_m: number | null;
 };
 
 type Author = { id: string; name: string; icon: string; color: string };
@@ -142,7 +185,9 @@ function PurchaseDetailPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("purchase_items")
-        .select("id, purchase_id, quantity, name, price, position, created_by")
+        .select(
+          "id, purchase_id, quantity, name, price, position, created_by, brand, unit_kind, pack_qty, pack_size, pack_size_unit, items_per_pack, rolls, width_cm, length_m",
+        )
         .eq("purchase_id", id)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true });
@@ -169,14 +214,16 @@ function PurchaseDetailPage() {
       const map = new Map(ps!.map((p) => [p.id, p]));
       const { data: its, error: e2 } = await supabase
         .from("purchase_items")
-        .select("purchase_id, name, price")
+        .select(
+          "purchase_id, name, price, quantity, brand, unit_kind, pack_qty, pack_size, pack_size_unit, items_per_pack, rolls, width_cm, length_m",
+        )
         .in("purchase_id", ids)
         .gt("price", 0);
       if (e2) throw e2;
       return (its ?? [])
         .map((it) => {
           const p = map.get(it.purchase_id)!;
-          return {
+          const hit: HistoryHit = {
             price: Number(it.price) || 0,
             name: it.name as string,
             purchaseName: (p.name as string) || "Sem nome",
@@ -184,9 +231,35 @@ function PurchaseDetailPage() {
             groupKey:
               (p.group_key as string | null) ||
               normalizeName(p.name as string),
+            quantity: Number(it.quantity) || 0,
+            brand: (it.brand as string | null) ?? null,
+            unit_kind: (it.unit_kind as string | null) ?? null,
+            pack_qty: (it.pack_qty as number | null) ?? null,
+            pack_size: (it.pack_size as number | null) ?? null,
+            pack_size_unit: (it.pack_size_unit as string | null) ?? null,
+            items_per_pack: (it.items_per_pack as number | null) ?? null,
+            rolls: (it.rolls as number | null) ?? null,
+            width_cm: (it.width_cm as number | null) ?? null,
+            length_m: (it.length_m as number | null) ?? null,
+            normalized: null,
           };
+          hit.normalized = normalizedPrice({
+            quantity: hit.quantity,
+            price: hit.price,
+            name: hit.name,
+            brand: hit.brand,
+            unit_kind: hit.unit_kind,
+            pack_qty: hit.pack_qty,
+            pack_size: hit.pack_size,
+            pack_size_unit: hit.pack_size_unit,
+            items_per_pack: hit.items_per_pack,
+            rolls: hit.rolls,
+            width_cm: hit.width_cm,
+            length_m: hit.length_m,
+          });
+          return hit;
         })
-        .filter((h) => h.name && h.name.trim().length > 0) as HistoryHit[];
+        .filter((h) => h.name && h.name.trim().length > 0);
     },
   });
 
@@ -770,6 +843,8 @@ function ItemRow({
   rowRef?: (el: HTMLLIElement | null) => void;
 }) {
   const qc = useQueryClient();
+  const { data: brands = [] } = useBrands();
+  const brandNames = useMemo(() => brands.map((b) => b.name), [brands]);
 
   const [qty, setQty] = useState(
     item.quantity ? String(item.quantity).replace(".", ",") : "",
@@ -779,6 +854,8 @@ function ItemRow({
     item.price ? formatMoneyInput(String(Math.round(item.price * 100))) : "",
   );
   const [compareOpen, setCompareOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [detailedOpen, setDetailedOpen] = useState(false);
   const [authorOpen, setAuthorOpen] = useState(false);
 
   useEffect(() => {
@@ -804,6 +881,19 @@ function ItemRow({
     400,
   );
 
+  // Auto-format on blur usando marcas conhecidas.
+  const handleNameBlur = async () => {
+    const formatted = autoFormat(name, brandNames);
+    if (formatted && formatted !== name) {
+      setName(formatted);
+      const { error } = await supabase
+        .from("purchase_items")
+        .update({ name: formatted, updated_at: new Date().toISOString() })
+        .eq("id", item.id);
+      if (!error) qc.invalidateQueries({ queryKey: ["items", purchaseId] });
+    }
+  };
+
   const remove = useMutation({
     mutationFn: async () => {
       const { error } = await supabase
@@ -816,7 +906,26 @@ function ItemRow({
   });
 
   const subtotal = (parseNumber(qty) || 0) * (parseNumber(price) || 0);
-  const cmp = compareTo(item.price, prev);
+
+  // Normalização do item atual (para comparação inteligente).
+  const currentNorm = useMemo(
+    () => normalizedPrice(item),
+    [
+      item.quantity,
+      item.price,
+      item.name,
+      item.unit_kind,
+      item.pack_qty,
+      item.pack_size,
+      item.pack_size_unit,
+      item.items_per_pack,
+      item.rolls,
+      item.width_cm,
+      item.length_m,
+    ],
+  );
+
+  const cmp = compareTo(item.price, prev, currentNorm);
   const cmpBorder =
     cmp === "cheaper"
       ? "border-success ring-2 ring-success/40"
@@ -832,12 +941,11 @@ function ItemRow({
   const missingPrice = nameFilled && (!item.price || item.price <= 0);
   const hasWarning = missingQty || missingPrice;
 
-  // Long-press (touch + mouse) abre comparação.
+  // Long-press → abre menu de ações (não vai direto pra comparação).
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startPress = () => {
-    if (!prev && !cheapest) return;
     if (pressTimer.current) clearTimeout(pressTimer.current);
-    pressTimer.current = setTimeout(() => setCompareOpen(true), 500);
+    pressTimer.current = setTimeout(() => setActionsOpen(true), 500);
   };
   const cancelPress = () => {
     if (pressTimer.current) {
@@ -848,15 +956,14 @@ function ItemRow({
   useEffect(() => () => cancelPress(), []);
 
   const AuthorIcon = author ? getIcon(author.icon) : null;
+  const isDetailed = !!item.unit_kind;
 
   return (
     <li
       ref={rowRef}
       onContextMenu={(e) => {
-        if (prev || cheapest) {
-          e.preventDefault();
-          setCompareOpen(true);
-        }
+        e.preventDefault();
+        setActionsOpen(true);
       }}
       onTouchStart={startPress}
       onTouchEnd={cancelPress}
@@ -872,7 +979,19 @@ function ItemRow({
           : cmpBorder
       }`}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setDetailedOpen(true)}
+          aria-label="Cadastro detalhado"
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+            isDetailed
+              ? "bg-primary/15 text-primary"
+              : "text-muted-foreground hover:bg-muted"
+          }`}
+        >
+          <Settings2 className="h-4 w-4" />
+        </button>
         <Input
           data-item-id={item.id + ":qty"}
           inputMode="decimal"
@@ -883,7 +1002,7 @@ function ItemRow({
             persist({ quantity: parseNumber(v) });
           }}
           placeholder="1"
-          className={`h-10 w-16 shrink-0 rounded-xl px-2 text-center text-base tabular-nums ${
+          className={`h-10 w-14 shrink-0 rounded-xl px-1 text-center text-base tabular-nums ${
             missingQty ? "border-destructive ring-2 ring-destructive/40 bg-destructive/5" : ""
           }`}
         />
@@ -894,8 +1013,9 @@ function ItemRow({
             setName(e.target.value);
             persist({ name: e.target.value.slice(0, 200) });
           }}
+          onBlur={handleNameBlur}
           placeholder="Nome do produto"
-          className="h-10 min-w-[180px] flex-1 rounded-xl text-base"
+          className="h-10 min-w-[140px] flex-1 rounded-xl text-base"
         />
         <Input
           data-item-id={item.id + ":price"}
@@ -907,13 +1027,22 @@ function ItemRow({
             persist({ price: parseNumber(v) });
           }}
           placeholder="0,00"
-          className={`h-10 w-24 shrink-0 rounded-xl text-right text-base tabular-nums ${
+          className={`h-10 w-20 shrink-0 rounded-xl text-right text-base tabular-nums ${
             missingPrice ? "border-destructive ring-2 ring-destructive/40 bg-destructive/5" : ""
           }`}
         />
-        <div className="w-24 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
+        <div className="w-20 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
           {formatBRL(subtotal)}
         </div>
+        <button
+          type="button"
+          onClick={() => setCompareOpen(true)}
+          aria-label="Comparar preço"
+          disabled={!prev && !cheapest}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary disabled:opacity-30"
+        >
+          <Scale className="h-4 w-4" />
+        </button>
         <button
           onClick={() => remove.mutate()}
           aria-label="Remover item"
@@ -1019,6 +1148,24 @@ function ItemRow({
                 </div>
               </div>
 
+              {currentNorm && prev?.normalized && currentNorm.kind === prev.normalized.kind && (
+                <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                    Preço por unidade ({currentNorm.unitLabel})
+                  </p>
+                  <div className="mt-1 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">Anterior</p>
+                      <p className="font-bold tabular-nums">{formatBRL(prev.normalized.perUnit)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">Atual</p>
+                      <p className="font-bold tabular-nums">{formatBRL(currentNorm.perUnit)}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {lastSameMarket && (
                 <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
@@ -1058,6 +1205,84 @@ function ItemRow({
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={actionsOpen} onOpenChange={setActionsOpen}>
+        <DialogContent className="rounded-3xl sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="truncate">{item.name || "Produto"}</DialogTitle>
+            <DialogDescription>O que você quer fazer?</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <ActionButton
+              icon={Settings2}
+              title="Cadastro detalhado"
+              subtitle={isDetailed ? "Editar peso/volume/marca" : "Adicionar marca, peso, volume…"}
+              onClick={() => {
+                setActionsOpen(false);
+                setDetailedOpen(true);
+              }}
+            />
+            <ActionButton
+              icon={Scale}
+              title="Comparação de preço"
+              subtitle={prev || cheapest ? "Ver histórico" : "Sem registros ainda"}
+              disabled={!prev && !cheapest}
+              onClick={() => {
+                setActionsOpen(false);
+                setCompareOpen(true);
+              }}
+            />
+            <ActionButton
+              icon={UserIcon}
+              title="Quem cadastrou"
+              subtitle={author ? author.name : "Sem autor"}
+              disabled={!author}
+              onClick={() => {
+                setActionsOpen(false);
+                setAuthorOpen(true);
+              }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <DetailedItemDialog
+        open={detailedOpen}
+        onOpenChange={setDetailedOpen}
+        item={item}
+        purchaseId={purchaseId}
+      />
     </li>
+  );
+}
+
+function ActionButton({
+  icon: Icon,
+  title,
+  subtitle,
+  onClick,
+  disabled,
+}: {
+  icon: typeof Settings2;
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card px-3 py-3 text-left transition-all hover:border-primary hover:bg-primary/5 disabled:opacity-40"
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-foreground">{title}</span>
+        <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>
+      </span>
+    </button>
   );
 }

@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
  */
 export function useRealtime(
   channelName: string,
-  table: "profiles" | "purchases" | "purchase_items" | "pre_list_items",
+  table: "profiles" | "purchases" | "purchase_items" | "pre_list_items" | "brands",
   invalidateKeys: unknown[][],
   filter?: string,
 ) {
