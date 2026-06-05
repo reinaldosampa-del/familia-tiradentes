@@ -10,13 +10,18 @@ import {
   ListChecks,
   CalendarIcon,
   Calculator,
+  Settings2,
+  Scale,
+  User as UserIcon,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useRealtime } from "@/hooks/useRealtime";
 import { useDebouncedCallback } from "@/hooks/useDebouncedCallback";
 import { useProfile } from "@/hooks/useProfile";
+import { useBrands } from "@/hooks/useBrands";
 import { PreListDialog } from "@/components/PreListDialog";
 import { PriceCalculatorDialog } from "@/components/PriceCalculatorDialog";
+import { DetailedItemDialog } from "@/components/DetailedItemDialog";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -47,6 +52,7 @@ import {
   parseNumber,
   similar,
 } from "@/lib/format";
+import { autoFormat, normalizedPrice, type NormalizedPrice } from "@/lib/product-parser";
 
 type HistoryHit = {
   price: number;
