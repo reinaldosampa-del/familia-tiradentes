@@ -5,7 +5,7 @@ import { useRealtime } from "./useRealtime";
 export type Brand = { id: string; name: string; normalized: string };
 
 export function useBrands() {
-  useRealtime("brands-list", "brands" as any, [["brands"]]);
+  useRealtime("brands-list", "brands", [["brands"]]);
   return useQuery({
     queryKey: ["brands"],
     queryFn: async (): Promise<Brand[]> => {
