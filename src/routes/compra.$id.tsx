@@ -1148,6 +1148,24 @@ function ItemRow({
                 </div>
               </div>
 
+              {currentNorm && prev?.normalized && currentNorm.kind === prev.normalized.kind && (
+                <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                    Preço por unidade ({currentNorm.unitLabel})
+                  </p>
+                  <div className="mt-1 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">Anterior</p>
+                      <p className="font-bold tabular-nums">{formatBRL(prev.normalized.perUnit)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">Atual</p>
+                      <p className="font-bold tabular-nums">{formatBRL(currentNorm.perUnit)}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {lastSameMarket && (
                 <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
@@ -1187,6 +1205,84 @@ function ItemRow({
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={actionsOpen} onOpenChange={setActionsOpen}>
+        <DialogContent className="rounded-3xl sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="truncate">{item.name || "Produto"}</DialogTitle>
+            <DialogDescription>O que você quer fazer?</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <ActionButton
+              icon={Settings2}
+              title="Cadastro detalhado"
+              subtitle={isDetailed ? "Editar peso/volume/marca" : "Adicionar marca, peso, volume…"}
+              onClick={() => {
+                setActionsOpen(false);
+                setDetailedOpen(true);
+              }}
+            />
+            <ActionButton
+              icon={Scale}
+              title="Comparação de preço"
+              subtitle={prev || cheapest ? "Ver histórico" : "Sem registros ainda"}
+              disabled={!prev && !cheapest}
+              onClick={() => {
+                setActionsOpen(false);
+                setCompareOpen(true);
+              }}
+            />
+            <ActionButton
+              icon={UserIcon}
+              title="Quem cadastrou"
+              subtitle={author ? author.name : "Sem autor"}
+              disabled={!author}
+              onClick={() => {
+                setActionsOpen(false);
+                setAuthorOpen(true);
+              }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <DetailedItemDialog
+        open={detailedOpen}
+        onOpenChange={setDetailedOpen}
+        item={item}
+        purchaseId={purchaseId}
+      />
     </li>
+  );
+}
+
+function ActionButton({
+  icon: Icon,
+  title,
+  subtitle,
+  onClick,
+  disabled,
+}: {
+  icon: typeof Settings2;
+  title: string;
+  subtitle: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex w-full items-center gap-3 rounded-2xl border border-border bg-card px-3 py-3 text-left transition-all hover:border-primary hover:bg-primary/5 disabled:opacity-40"
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-foreground">{title}</span>
+        <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>
+      </span>
+    </button>
   );
 }
