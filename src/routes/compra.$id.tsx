@@ -843,6 +843,8 @@ function ItemRow({
   rowRef?: (el: HTMLLIElement | null) => void;
 }) {
   const qc = useQueryClient();
+  const { data: brands = [] } = useBrands();
+  const brandNames = useMemo(() => brands.map((b) => b.name), [brands]);
 
   const [qty, setQty] = useState(
     item.quantity ? String(item.quantity).replace(".", ",") : "",
@@ -852,6 +854,8 @@ function ItemRow({
     item.price ? formatMoneyInput(String(Math.round(item.price * 100))) : "",
   );
   const [compareOpen, setCompareOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [detailedOpen, setDetailedOpen] = useState(false);
   const [authorOpen, setAuthorOpen] = useState(false);
 
   useEffect(() => {
@@ -877,6 +881,19 @@ function ItemRow({
     400,
   );
 
+  // Auto-format on blur usando marcas conhecidas.
+  const handleNameBlur = async () => {
+    const formatted = autoFormat(name, brandNames);
+    if (formatted && formatted !== name) {
+      setName(formatted);
+      const { error } = await supabase
+        .from("purchase_items")
+        .update({ name: formatted, updated_at: new Date().toISOString() })
+        .eq("id", item.id);
+      if (!error) qc.invalidateQueries({ queryKey: ["items", purchaseId] });
+    }
+  };
+
   const remove = useMutation({
     mutationFn: async () => {
       const { error } = await supabase
@@ -889,7 +906,26 @@ function ItemRow({
   });
 
   const subtotal = (parseNumber(qty) || 0) * (parseNumber(price) || 0);
-  const cmp = compareTo(item.price, prev);
+
+  // Normalização do item atual (para comparação inteligente).
+  const currentNorm = useMemo(
+    () => normalizedPrice(item),
+    [
+      item.quantity,
+      item.price,
+      item.name,
+      item.unit_kind,
+      item.pack_qty,
+      item.pack_size,
+      item.pack_size_unit,
+      item.items_per_pack,
+      item.rolls,
+      item.width_cm,
+      item.length_m,
+    ],
+  );
+
+  const cmp = compareTo(item.price, prev, currentNorm);
   const cmpBorder =
     cmp === "cheaper"
       ? "border-success ring-2 ring-success/40"
@@ -905,12 +941,11 @@ function ItemRow({
   const missingPrice = nameFilled && (!item.price || item.price <= 0);
   const hasWarning = missingQty || missingPrice;
 
-  // Long-press (touch + mouse) abre comparação.
+  // Long-press → abre menu de ações (não vai direto pra comparação).
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startPress = () => {
-    if (!prev && !cheapest) return;
     if (pressTimer.current) clearTimeout(pressTimer.current);
-    pressTimer.current = setTimeout(() => setCompareOpen(true), 500);
+    pressTimer.current = setTimeout(() => setActionsOpen(true), 500);
   };
   const cancelPress = () => {
     if (pressTimer.current) {
@@ -921,6 +956,7 @@ function ItemRow({
   useEffect(() => () => cancelPress(), []);
 
   const AuthorIcon = author ? getIcon(author.icon) : null;
+  const isDetailed = !!item.unit_kind;
 
   return (
     <li
