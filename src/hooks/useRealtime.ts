@@ -13,8 +13,9 @@ export function useRealtime(
 ) {
   const qc = useQueryClient();
   useEffect(() => {
+    const uniqueName = `${channelName}-${Math.random().toString(36).slice(2, 10)}`;
     const ch = supabase
-      .channel(channelName)
+      .channel(uniqueName)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table, ...(filter ? { filter } : {}) },

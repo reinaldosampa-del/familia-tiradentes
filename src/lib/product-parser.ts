@@ -60,28 +60,41 @@ export function parseProduct(raw: string, brandList: string[] = []): ParsedProdu
     }
   }
 
-  // Busca marca: cada marca cadastrada, normalizada, tenta substring no nome normalizado.
+  // Tokeniza preservando originais + versão normalizada (sem acentos/minúscula).
+  const origTokens = working.split(/\s+/).filter(Boolean);
+  const normTokens = origTokens.map((t) => normalizeName(t));
   let brand: string | undefined;
-  const normWorking = " " + normalizeName(working) + " ";
-  let bestLen = 0;
+  let bestScore = -1;
+  let matchStart = -1;
+  let matchEnd = -1;
   for (const b of brandList) {
-    const nb = normalizeName(b);
-    if (!nb) continue;
-    if (normWorking.includes(" " + nb + " ") && nb.length > bestLen) {
-      brand = b;
-      bestLen = nb.length;
+    const bTokens = normalizeName(b).split(/\s+/).filter(Boolean);
+    if (!bTokens.length) continue;
+    const bJoined = bTokens.join(" ");
+    const win = bTokens.length;
+    const tol = Math.max(1, Math.floor(bJoined.length / 4));
+    for (let i = 0; i + win <= normTokens.length; i++) {
+      const slice = normTokens.slice(i, i + win).join(" ");
+      const d = levenshtein(slice, bJoined);
+      if (d <= tol) {
+        const score = bJoined.length * 10 - d;
+        if (score > bestScore) {
+          bestScore = score;
+          brand = b;
+          matchStart = i;
+          matchEnd = i + win;
+        }
+        break;
+      }
     }
   }
 
-  // Remove marca do working para isolar base.
-  let baseText = working;
-  if (brand) {
-    const re = new RegExp(
-      "\\b" + brand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b",
-      "i",
-    );
-    baseText = baseText.replace(re, " ");
-  }
+  // Remove os tokens originais que casaram com a marca (mesmo digitados errado).
+  const remainingTokens =
+    brand && matchStart >= 0
+      ? origTokens.filter((_, idx) => idx < matchStart || idx >= matchEnd)
+      : origTokens;
+  const baseText = remainingTokens.join(" ");
 
   // Limpa stopwords/duplicados de espaço.
   const tokens = baseText
@@ -97,6 +110,27 @@ export function parseProduct(raw: string, brandList: string[] = []): ParsedProdu
     sizeUnit,
   };
 }
+
+/** Distância de edição (Levenshtein), usada para fuzzy match de marca. */
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+  }
+  return prev[b.length];
+}
+
+
 
 /** Recompõe um nome bonito: "Arroz Camil 5Kg" */
 export function formatProductName(p: ParsedProduct): string {
