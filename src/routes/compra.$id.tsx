@@ -1154,7 +1154,7 @@ function ItemRow({
             type="button"
             onClick={() => setCompareOpen(true)}
             aria-label="Comparar preço"
-            disabled={!prev && !cheapest}
+            disabled={!hasAnyHistory}
             className="flex h-6 items-center gap-1 rounded-full px-1.5 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary disabled:opacity-30"
           >
             <Scale className="h-3.5 w-3.5" />
