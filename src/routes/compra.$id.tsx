@@ -265,12 +265,21 @@ function PurchaseDetailPage() {
 
   const currentGroupKey = groupKey;
 
-  // Para um nome devolve: último geral, último do mesmo mercado e o mais barato.
+  // Para um nome devolve 4 resultados na ordem fixa pedida:
+  // 1) Mesma marca, última no mercado atual
+  // 2) Qualquer marca, mais barato no mercado atual
+  // 3) Mesma marca, mais barato em todos os mercados
+  // 4) Qualquer marca, mais barato em todos os mercados
   const matchHistory = useMemo(() => {
     return (
       rawName: string,
       currentBrand: string | null,
-    ): { last?: HistoryHit; lastSameMarket?: HistoryHit; cheapest?: HistoryHit } => {
+    ): {
+      sameBrandMarketLast?: HistoryHit;
+      anyBrandMarketCheapest?: HistoryHit;
+      sameBrandAllCheapest?: HistoryHit;
+      anyBrandAllCheapest?: HistoryHit;
+    } => {
       if (!rawName?.trim()) return {};
       const matches = history.filter((h) => similar(rawName, h.name));
       if (matches.length === 0) return {};
@@ -278,31 +287,28 @@ function PurchaseDetailPage() {
       const sameBrand = (h: HistoryHit) => !!cb && normalizeName(h.brand || "") === cb;
       const sameMarket = (h: HistoryHit) => !!h.groupKey && h.groupKey === currentGroupKey;
 
-      // Prioridade: (1) mesma marca + mesmo mercado, (2) mesma marca qq mercado,
-      // (3) qq marca + mesmo mercado, (4) qq marca + qq mercado.
-      const tiers = [
-        matches.filter((h) => sameBrand(h) && sameMarket(h)),
-        matches.filter((h) => sameBrand(h) && !sameMarket(h)),
-        matches.filter((h) => !sameBrand(h) && sameMarket(h)),
-        matches.filter((h) => !sameBrand(h) && !sameMarket(h)),
-      ];
-      let last: HistoryHit | undefined;
-      for (const tier of tiers) {
-        if (tier.length) {
-          last = tier.reduce((a, b) => (b.date > a.date ? b : a));
-          break;
-        }
-      }
+      const pickLatest = (arr: HistoryHit[]) =>
+        arr.length ? arr.reduce((a, b) => (b.date > a.date ? b : a)) : undefined;
+      // Mais barato; em empate, o mais recente.
+      const pickCheapest = (arr: HistoryHit[]) =>
+        arr.length
+          ? arr.reduce((a, b) => {
+              if (b.price < a.price) return b;
+              if (b.price === a.price && b.date > a.date) return b;
+              return a;
+            })
+          : undefined;
 
-      let lastSameMarket: HistoryHit | undefined;
-      let cheapest = matches[0];
-      for (const h of matches) {
-        if (h.price < cheapest.price) cheapest = h;
-        if (sameMarket(h) && (!lastSameMarket || h.date > lastSameMarket.date)) {
-          lastSameMarket = h;
-        }
-      }
-      return { last, lastSameMarket, cheapest };
+      const sameBrandMarket = matches.filter((h) => sameBrand(h) && sameMarket(h));
+      const market = matches.filter((h) => sameMarket(h));
+      const sameBrandAll = matches.filter((h) => sameBrand(h));
+
+      return {
+        sameBrandMarketLast: pickLatest(sameBrandMarket),
+        anyBrandMarketCheapest: pickCheapest(market),
+        sameBrandAllCheapest: pickCheapest(sameBrandAll),
+        anyBrandAllCheapest: pickCheapest(matches),
+      };
     };
   }, [history, currentGroupKey]);
 
@@ -431,9 +437,10 @@ function PurchaseDetailPage() {
                     item={item}
                     purchaseId={id}
                     highlighted={highlightId === item.id}
-                    prev={m.last}
-                    lastSameMarket={m.lastSameMarket}
-                    cheapest={m.cheapest}
+                    sameBrandMarketLast={m.sameBrandMarketLast}
+                    anyBrandMarketCheapest={m.anyBrandMarketCheapest}
+                    sameBrandAllCheapest={m.sameBrandAllCheapest}
+                    anyBrandAllCheapest={m.anyBrandAllCheapest}
                     author={item.created_by ? authorsById.get(item.created_by) : undefined}
                     rowRef={(el) => {
                       itemRefs.current[item.id] = el;
@@ -911,18 +918,20 @@ function ItemRow({
   item,
   purchaseId,
   highlighted,
-  prev,
-  lastSameMarket,
-  cheapest,
+  sameBrandMarketLast,
+  anyBrandMarketCheapest,
+  sameBrandAllCheapest,
+  anyBrandAllCheapest,
   author,
   rowRef,
 }: {
   item: Item;
   purchaseId: string;
   highlighted?: boolean;
-  prev?: HistoryHit;
-  lastSameMarket?: HistoryHit;
-  cheapest?: HistoryHit;
+  sameBrandMarketLast?: HistoryHit;
+  anyBrandMarketCheapest?: HistoryHit;
+  sameBrandAllCheapest?: HistoryHit;
+  anyBrandAllCheapest?: HistoryHit;
   author?: Author;
   rowRef?: (el: HTMLLIElement | null) => void;
 }) {
@@ -1009,6 +1018,17 @@ function ItemRow({
     ],
   );
 
+  // Referência principal para o badge/borda: última compra mesma marca neste mercado.
+  const prev = sameBrandMarketLast;
+  const hasAnyHistory = !!(
+    sameBrandMarketLast ||
+    anyBrandMarketCheapest ||
+    sameBrandAllCheapest ||
+    anyBrandAllCheapest
+  );
+  // Destaques: identifica a "última do mercado atual" e a "mais em conta de todas".
+  const overallCheapest = anyBrandAllCheapest;
+  const currentMarketRef = anyBrandMarketCheapest;
   const cmp = compareTo(item.price, prev, currentNorm);
   const cmpBorder =
     cmp === "cheaper"
@@ -1134,7 +1154,7 @@ function ItemRow({
             type="button"
             onClick={() => setCompareOpen(true)}
             aria-label="Comparar preço"
-            disabled={!prev && !cheapest}
+            disabled={!hasAnyHistory}
             className="flex h-6 items-center gap-1 rounded-full px-1.5 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary disabled:opacity-30"
           >
             <Scale className="h-3.5 w-3.5" />
@@ -1177,12 +1197,12 @@ function ItemRow({
               Comparação com o histórico de todas as compras.
             </DialogDescription>
           </DialogHeader>
-          {prev || cheapest ? (
+          {hasAnyHistory ? (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-2xl bg-muted/60 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Último preço
+                    Última (mesma marca · mercado)
                   </p>
                   <p className="mt-1 text-xl font-bold tabular-nums">
                     {prev ? formatBRL(prev.price) : "—"}
@@ -1230,7 +1250,7 @@ function ItemRow({
                         ? `+${formatBRL(item.price - (prev?.price ?? 0))} mais caro`
                         : cmp === "same"
                           ? "Mesmo preço"
-                          : "Sem preço informado"}
+                          : "Sem comparação direta"}
                   </p>
                 </div>
               </div>
@@ -1253,37 +1273,42 @@ function ItemRow({
                 </div>
               )}
 
-              {lastSameMarket && (
-                <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-                    Último preço neste mercado
-                  </p>
-                  <div className="mt-1 flex items-baseline justify-between gap-3">
-                    <p className="text-lg font-bold tabular-nums text-primary">
-                      {formatBRL(lastSameMarket.price)}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {formatShortDate(lastSameMarket.date)}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {cheapest && (
-                <div className="rounded-2xl border border-success/30 bg-success/5 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-success">
-                    Menor preço já registrado
-                  </p>
-                  <div className="mt-1 flex items-baseline justify-between gap-3">
-                    <p className="text-lg font-bold tabular-nums text-success">
-                      {formatBRL(cheapest.price)}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {cheapest.purchaseName} · {formatShortDate(cheapest.date)}
-                    </p>
-                  </div>
-                </div>
-              )}
+              <ComparisonRow
+                label="1. Mesma marca · última no mercado atual"
+                hit={sameBrandMarketLast}
+                tone="primary"
+                highlight={
+                  !!currentMarketRef &&
+                  !!sameBrandMarketLast &&
+                  sameBrandMarketLast === currentMarketRef
+                    ? "current-market"
+                    : undefined
+                }
+              />
+              <ComparisonRow
+                label="2. Qualquer marca · mais barato no mercado atual"
+                hit={anyBrandMarketCheapest}
+                tone="primary"
+                highlight="current-market"
+              />
+              <ComparisonRow
+                label="3. Mesma marca · mais barato em todos os mercados"
+                hit={sameBrandAllCheapest}
+                tone="success"
+                highlight={
+                  !!overallCheapest &&
+                  !!sameBrandAllCheapest &&
+                  sameBrandAllCheapest === overallCheapest
+                    ? "overall-cheapest"
+                    : undefined
+                }
+              />
+              <ComparisonRow
+                label="4. Qualquer marca · mais barato em todos os mercados"
+                hit={anyBrandAllCheapest}
+                tone="success"
+                highlight="overall-cheapest"
+              />
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -1312,8 +1337,8 @@ function ItemRow({
             <ActionButton
               icon={Scale}
               title="Comparação de preço"
-              subtitle={prev || cheapest ? "Ver histórico" : "Sem registros ainda"}
-              disabled={!prev && !cheapest}
+              subtitle={hasAnyHistory ? "Ver histórico" : "Sem registros ainda"}
+              disabled={!hasAnyHistory}
               onClick={() => {
                 setActionsOpen(false);
                 setCompareOpen(true);
@@ -1371,5 +1396,62 @@ function ActionButton({
         <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>
       </span>
     </button>
+  );
+}
+
+function ComparisonRow({
+  label,
+  hit,
+  tone,
+  highlight,
+}: {
+  label: string;
+  hit?: HistoryHit;
+  tone: "primary" | "success";
+  highlight?: "current-market" | "overall-cheapest";
+}) {
+  const toneClasses =
+    tone === "success"
+      ? "border-success/30 bg-success/5"
+      : "border-primary/30 bg-primary/5";
+  const labelClasses =
+    tone === "success" ? "text-success" : "text-primary";
+  const valueClasses =
+    tone === "success" ? "text-success" : "text-primary";
+  return (
+    <div className={`rounded-2xl border p-3 ${toneClasses}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className={`text-[10px] font-semibold uppercase tracking-wider ${labelClasses}`}>
+          {label}
+        </p>
+        {highlight === "current-market" && (
+          <span className="rounded-full bg-primary px-2 py-0.5 text-[9px] font-bold uppercase text-primary-foreground">
+            Mercado atual
+          </span>
+        )}
+        {highlight === "overall-cheapest" && (
+          <span className="rounded-full bg-success px-2 py-0.5 text-[9px] font-bold uppercase text-white">
+            Mais em conta
+          </span>
+        )}
+      </div>
+      {hit ? (
+        <div className="mt-1 flex items-baseline justify-between gap-3">
+          <p className={`text-lg font-bold tabular-nums ${valueClasses}`}>
+            {formatBRL(hit.price)}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            {hit.purchaseName} · {formatShortDate(hit.date)}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-1 text-xs text-muted-foreground">Sem registro.</p>
+      )}
+      {hit?.brand && (
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          {hit.brand}
+        </p>
+      )}
+    </div>
   );
 }
