@@ -265,12 +265,21 @@ function PurchaseDetailPage() {
 
   const currentGroupKey = groupKey;
 
-  // Para um nome devolve: último geral, último do mesmo mercado e o mais barato.
+  // Para um nome devolve 4 resultados na ordem fixa pedida:
+  // 1) Mesma marca, última no mercado atual
+  // 2) Qualquer marca, mais barato no mercado atual
+  // 3) Mesma marca, mais barato em todos os mercados
+  // 4) Qualquer marca, mais barato em todos os mercados
   const matchHistory = useMemo(() => {
     return (
       rawName: string,
       currentBrand: string | null,
-    ): { last?: HistoryHit; lastSameMarket?: HistoryHit; cheapest?: HistoryHit } => {
+    ): {
+      sameBrandMarketLast?: HistoryHit;
+      anyBrandMarketCheapest?: HistoryHit;
+      sameBrandAllCheapest?: HistoryHit;
+      anyBrandAllCheapest?: HistoryHit;
+    } => {
       if (!rawName?.trim()) return {};
       const matches = history.filter((h) => similar(rawName, h.name));
       if (matches.length === 0) return {};
@@ -278,31 +287,28 @@ function PurchaseDetailPage() {
       const sameBrand = (h: HistoryHit) => !!cb && normalizeName(h.brand || "") === cb;
       const sameMarket = (h: HistoryHit) => !!h.groupKey && h.groupKey === currentGroupKey;
 
-      // Prioridade: (1) mesma marca + mesmo mercado, (2) mesma marca qq mercado,
-      // (3) qq marca + mesmo mercado, (4) qq marca + qq mercado.
-      const tiers = [
-        matches.filter((h) => sameBrand(h) && sameMarket(h)),
-        matches.filter((h) => sameBrand(h) && !sameMarket(h)),
-        matches.filter((h) => !sameBrand(h) && sameMarket(h)),
-        matches.filter((h) => !sameBrand(h) && !sameMarket(h)),
-      ];
-      let last: HistoryHit | undefined;
-      for (const tier of tiers) {
-        if (tier.length) {
-          last = tier.reduce((a, b) => (b.date > a.date ? b : a));
-          break;
-        }
-      }
+      const pickLatest = (arr: HistoryHit[]) =>
+        arr.length ? arr.reduce((a, b) => (b.date > a.date ? b : a)) : undefined;
+      // Mais barato; em empate, o mais recente.
+      const pickCheapest = (arr: HistoryHit[]) =>
+        arr.length
+          ? arr.reduce((a, b) => {
+              if (b.price < a.price) return b;
+              if (b.price === a.price && b.date > a.date) return b;
+              return a;
+            })
+          : undefined;
 
-      let lastSameMarket: HistoryHit | undefined;
-      let cheapest = matches[0];
-      for (const h of matches) {
-        if (h.price < cheapest.price) cheapest = h;
-        if (sameMarket(h) && (!lastSameMarket || h.date > lastSameMarket.date)) {
-          lastSameMarket = h;
-        }
-      }
-      return { last, lastSameMarket, cheapest };
+      const sameBrandMarket = matches.filter((h) => sameBrand(h) && sameMarket(h));
+      const market = matches.filter((h) => sameMarket(h));
+      const sameBrandAll = matches.filter((h) => sameBrand(h));
+
+      return {
+        sameBrandMarketLast: pickLatest(sameBrandMarket),
+        anyBrandMarketCheapest: pickCheapest(market),
+        sameBrandAllCheapest: pickCheapest(sameBrandAll),
+        anyBrandAllCheapest: pickCheapest(matches),
+      };
     };
   }, [history, currentGroupKey]);
 
