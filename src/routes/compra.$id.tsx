@@ -1197,12 +1197,12 @@ function ItemRow({
               Comparação com o histórico de todas as compras.
             </DialogDescription>
           </DialogHeader>
-          {prev || cheapest ? (
+          {hasAnyHistory ? (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-2xl bg-muted/60 p-3">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Último preço
+                    Última (mesma marca · mercado)
                   </p>
                   <p className="mt-1 text-xl font-bold tabular-nums">
                     {prev ? formatBRL(prev.price) : "—"}
@@ -1250,7 +1250,7 @@ function ItemRow({
                         ? `+${formatBRL(item.price - (prev?.price ?? 0))} mais caro`
                         : cmp === "same"
                           ? "Mesmo preço"
-                          : "Sem preço informado"}
+                          : "Sem comparação direta"}
                   </p>
                 </div>
               </div>
@@ -1273,37 +1273,42 @@ function ItemRow({
                 </div>
               )}
 
-              {lastSameMarket && (
-                <div className="rounded-2xl border border-primary/30 bg-primary/5 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-                    Último preço neste mercado
-                  </p>
-                  <div className="mt-1 flex items-baseline justify-between gap-3">
-                    <p className="text-lg font-bold tabular-nums text-primary">
-                      {formatBRL(lastSameMarket.price)}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {formatShortDate(lastSameMarket.date)}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {cheapest && (
-                <div className="rounded-2xl border border-success/30 bg-success/5 p-3">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-success">
-                    Menor preço já registrado
-                  </p>
-                  <div className="mt-1 flex items-baseline justify-between gap-3">
-                    <p className="text-lg font-bold tabular-nums text-success">
-                      {formatBRL(cheapest.price)}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {cheapest.purchaseName} · {formatShortDate(cheapest.date)}
-                    </p>
-                  </div>
-                </div>
-              )}
+              <ComparisonRow
+                label="1. Mesma marca · última no mercado atual"
+                hit={sameBrandMarketLast}
+                tone="primary"
+                highlight={
+                  !!currentMarketRef &&
+                  !!sameBrandMarketLast &&
+                  sameBrandMarketLast === currentMarketRef
+                    ? "current-market"
+                    : undefined
+                }
+              />
+              <ComparisonRow
+                label="2. Qualquer marca · mais barato no mercado atual"
+                hit={anyBrandMarketCheapest}
+                tone="primary"
+                highlight="current-market"
+              />
+              <ComparisonRow
+                label="3. Mesma marca · mais barato em todos os mercados"
+                hit={sameBrandAllCheapest}
+                tone="success"
+                highlight={
+                  !!overallCheapest &&
+                  !!sameBrandAllCheapest &&
+                  sameBrandAllCheapest === overallCheapest
+                    ? "overall-cheapest"
+                    : undefined
+                }
+              />
+              <ComparisonRow
+                label="4. Qualquer marca · mais barato em todos os mercados"
+                hit={anyBrandAllCheapest}
+                tone="success"
+                highlight="overall-cheapest"
+              />
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">
