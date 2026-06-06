@@ -437,9 +437,10 @@ function PurchaseDetailPage() {
                     item={item}
                     purchaseId={id}
                     highlighted={highlightId === item.id}
-                    prev={m.last}
-                    lastSameMarket={m.lastSameMarket}
-                    cheapest={m.cheapest}
+                    sameBrandMarketLast={m.sameBrandMarketLast}
+                    anyBrandMarketCheapest={m.anyBrandMarketCheapest}
+                    sameBrandAllCheapest={m.sameBrandAllCheapest}
+                    anyBrandAllCheapest={m.anyBrandAllCheapest}
                     author={item.created_by ? authorsById.get(item.created_by) : undefined}
                     rowRef={(el) => {
                       itemRefs.current[item.id] = el;
