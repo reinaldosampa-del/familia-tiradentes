@@ -269,18 +269,37 @@ function PurchaseDetailPage() {
   const matchHistory = useMemo(() => {
     return (
       rawName: string,
+      currentBrand: string | null,
     ): { last?: HistoryHit; lastSameMarket?: HistoryHit; cheapest?: HistoryHit } => {
       if (!rawName?.trim()) return {};
       const matches = history.filter((h) => similar(rawName, h.name));
       if (matches.length === 0) return {};
-      let last = matches[0];
-      let cheapest = matches[0];
+      const cb = normalizeName(currentBrand || "");
+      const sameBrand = (h: HistoryHit) => !!cb && normalizeName(h.brand || "") === cb;
+      const sameMarket = (h: HistoryHit) => !!h.groupKey && h.groupKey === currentGroupKey;
+
+      // Prioridade: (1) mesma marca + mesmo mercado, (2) mesma marca qq mercado,
+      // (3) qq marca + mesmo mercado, (4) qq marca + qq mercado.
+      const tiers = [
+        matches.filter((h) => sameBrand(h) && sameMarket(h)),
+        matches.filter((h) => sameBrand(h) && !sameMarket(h)),
+        matches.filter((h) => !sameBrand(h) && sameMarket(h)),
+        matches.filter((h) => !sameBrand(h) && !sameMarket(h)),
+      ];
+      let last: HistoryHit | undefined;
+      for (const tier of tiers) {
+        if (tier.length) {
+          last = tier.reduce((a, b) => (b.date > a.date ? b : a));
+          break;
+        }
+      }
+
       let lastSameMarket: HistoryHit | undefined;
+      let cheapest = matches[0];
       for (const h of matches) {
-        if (h.date > last.date) last = h;
         if (h.price < cheapest.price) cheapest = h;
-        if (h.groupKey && h.groupKey === currentGroupKey) {
-          if (!lastSameMarket || h.date > lastSameMarket.date) lastSameMarket = h;
+        if (sameMarket(h) && (!lastSameMarket || h.date > lastSameMarket.date)) {
+          lastSameMarket = h;
         }
       }
       return { last, lastSameMarket, cheapest };
@@ -341,6 +360,21 @@ function PurchaseDetailPage() {
     onSuccess: () => router.navigate({ to: "/" }),
   });
 
+  const deleteAllPurchases = useMutation({
+    mutationFn: async () => {
+      const key = purchase?.group_key || normalizeName(purchase?.name || "");
+      const { data: list } = await supabase
+        .from("purchases")
+        .select("id")
+        .or(`group_key.eq.${key},name.ilike.${purchase?.name || ""}`);
+      const ids = (list ?? []).map((p) => p.id);
+      if (ids.length === 0) return;
+      const { error } = await supabase.from("purchases").delete().in("id", ids);
+      if (error) throw error;
+    },
+    onSuccess: () => router.navigate({ to: "/" }),
+  });
+
   const [preOpen, setPreOpen] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -367,6 +401,7 @@ function PurchaseDetailPage() {
         purchase={purchase}
         total={total}
         onDelete={() => deletePurchase.mutate()}
+        onDeleteAll={() => deleteAllPurchases.mutate()}
         onOpenPreList={() => setPreOpen(true)}
         onOpenCalc={() => setCalcOpen(true)}
       />
@@ -389,7 +424,7 @@ function PurchaseDetailPage() {
           ) : (
             <ul className="space-y-2">
               {items.map((item) => {
-                const m = matchHistory(item.name);
+                const m = matchHistory(item.name, item.brand);
                 return (
                   <ItemRow
                     key={item.id}
@@ -464,12 +499,14 @@ function PurchaseHeader({
   purchase,
   total,
   onDelete,
+  onDeleteAll,
   onOpenPreList,
   onOpenCalc,
 }: {
   purchase: Purchase;
   total: number;
   onDelete: () => void;
+  onDeleteAll: () => void;
   onOpenPreList: () => void;
   onOpenCalc: () => void;
 }) {
@@ -478,6 +515,7 @@ function PurchaseHeader({
 
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
 
   const [budgetText, setBudgetText] = useState(
     purchase.budget ? formatMoneyInput(String(Math.round(purchase.budget * 100))) : "",
@@ -642,7 +680,7 @@ function PurchaseHeader({
                 onClick={() => setConfirmDel(true)}
                 className="gap-2 text-destructive focus:text-destructive"
               >
-                <Trash2 className="h-4 w-4" /> Excluir compra
+                <Trash2 className="h-4 w-4" /> Excluir compra do dia
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -675,7 +713,7 @@ function PurchaseHeader({
             <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               Data
             </span>
-            <Popover>
+            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
               <PopoverTrigger asChild>
                 <Button
                   type="button"
@@ -694,6 +732,7 @@ function PurchaseHeader({
                     if (!d) return;
                     const iso = toISO(d);
                     setDateText(iso);
+                    setCalendarOpen(false);
                     saveDate(iso);
                   }}
                   modifiers={{ hasRecord: markedDateObjs }}
@@ -714,6 +753,7 @@ function PurchaseHeader({
         open={editOpen}
         onOpenChange={setEditOpen}
         purchase={purchase}
+        onDeleteAll={onDeleteAll}
       />
 
       <Dialog open={confirmDel} onOpenChange={setConfirmDel}>
@@ -753,73 +793,117 @@ function EditPurchaseDialog({
   open,
   onOpenChange,
   purchase,
+  onDeleteAll,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   purchase: Purchase;
+  onDeleteAll: () => void;
 }) {
   const qc = useQueryClient();
   const [name, setName] = useState(purchase.name);
   const [icon, setIcon] = useState(purchase.icon);
   const [saving, setSaving] = useState(false);
+  const [confirmAll, setConfirmAll] = useState(false);
 
   useEffect(() => {
     if (open) {
       setName(purchase.name);
       setIcon(purchase.icon);
+      setConfirmAll(false);
     }
   }, [open, purchase.name, purchase.icon]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="rounded-3xl sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Editar compra</DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setSaving(true);
-            const { error } = await supabase
-              .from("purchases")
-              .update({
-                name: name.trim().slice(0, 60),
-                icon,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", purchase.id);
-            setSaving(false);
-            if (!error) {
-              qc.invalidateQueries({ queryKey: ["purchase", purchase.id] });
-              qc.invalidateQueries({ queryKey: ["purchases"] });
-              onOpenChange(false);
-            }
-          }}
-          className="space-y-5"
-        >
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Nome</label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={60}
-              className="h-12 rounded-2xl text-base"
-            />
-          </div>
-          <div className="space-y-3">
-            <label className="text-sm font-medium">Ícone</label>
-            <IconPicker icons={PURCHASE_ICONS} value={icon} onChange={setIcon} />
-          </div>
-          <Button
-            type="submit"
-            disabled={saving || !name.trim()}
-            className="h-12 w-full rounded-2xl text-base font-semibold"
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="rounded-3xl sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar compra</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setSaving(true);
+              const { error } = await supabase
+                .from("purchases")
+                .update({
+                  name: name.trim().slice(0, 60),
+                  icon,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", purchase.id);
+              setSaving(false);
+              if (!error) {
+                qc.invalidateQueries({ queryKey: ["purchase", purchase.id] });
+                qc.invalidateQueries({ queryKey: ["purchases"] });
+                onOpenChange(false);
+              }
+            }}
+            className="space-y-5"
           >
-            Salvar
-          </Button>
-        </form>
-      </DialogContent>
-    </Dialog>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Nome</label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={60}
+                className="h-12 rounded-2xl text-base"
+              />
+            </div>
+            <div className="space-y-3">
+              <label className="text-sm font-medium">Ícone</label>
+              <IconPicker icons={PURCHASE_ICONS} value={icon} onChange={setIcon} />
+            </div>
+            <Button
+              type="submit"
+              disabled={saving || !name.trim()}
+              className="h-12 w-full rounded-2xl text-base font-semibold"
+            >
+              Salvar
+            </Button>
+            <button
+              type="button"
+              onClick={() => setConfirmAll(true)}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" /> Excluir compra
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmAll} onOpenChange={setConfirmAll}>
+        <DialogContent className="rounded-3xl sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Excluir todas as compras?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Todas as compras deste grupo serão apagadas. Esta ação não pode ser desfeita.
+          </p>
+          <DialogFooter className="flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setConfirmAll(false)}
+              className="flex-1 rounded-2xl"
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirmAll(false);
+                onOpenChange(false);
+                onDeleteAll();
+              }}
+              className="flex-1 rounded-2xl"
+            >
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -980,18 +1064,6 @@ function ItemRow({
       }`}
     >
       <div className="flex items-center gap-1.5">
-        <button
-          type="button"
-          onClick={() => setDetailedOpen(true)}
-          aria-label="Cadastro detalhado"
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
-            isDetailed
-              ? "bg-primary/15 text-primary"
-              : "text-muted-foreground hover:bg-muted"
-          }`}
-        >
-          <Settings2 className="h-4 w-4" />
-        </button>
         <Input
           data-item-id={item.id + ":qty"}
           inputMode="decimal"
@@ -1035,15 +1107,6 @@ function ItemRow({
           {formatBRL(subtotal)}
         </div>
         <button
-          type="button"
-          onClick={() => setCompareOpen(true)}
-          aria-label="Comparar preço"
-          disabled={!prev && !cheapest}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary disabled:opacity-30"
-        >
-          <Scale className="h-4 w-4" />
-        </button>
-        <button
           onClick={() => remove.mutate()}
           aria-label="Remover item"
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
@@ -1052,35 +1115,59 @@ function ItemRow({
         </button>
       </div>
 
-      {(hasWarning || author) && (
-        <div className="flex items-center justify-between gap-2 pl-1 pr-1">
-          <div className="min-w-0 flex-1">
-            {hasWarning && (
-              <p className="truncate text-[11px] font-medium text-destructive">
-                ⚠ Faltam:{" "}
-                {missingQty && missingPrice
-                  ? "quantidade e valor"
-                  : missingQty
-                    ? "quantidade"
-                    : "valor"}
-                . Você pode preencher depois.
-              </p>
-            )}
-          </div>
-          {author && AuthorIcon && (
-            <button
-              type="button"
-              onClick={() => setAuthorOpen((v) => !v)}
-              aria-label={`Adicionado por ${author.name}`}
-              className="flex h-6 shrink-0 items-center gap-1 rounded-full px-1.5 text-[11px] font-medium text-white shadow-sm transition-all active:scale-95"
-              style={{ backgroundColor: author.color || "#3b82f6" }}
-            >
-              <AuthorIcon className="h-3.5 w-3.5" />
-              {authorOpen && <span className="px-0.5">{author.name}</span>}
-            </button>
+      <div className="flex items-center justify-between gap-2 pl-1 pr-1">
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setDetailedOpen(true)}
+            aria-label="Cadastro detalhado"
+            className={`flex h-6 items-center gap-1 rounded-full px-1.5 text-[10px] font-semibold transition-colors ${
+              isDetailed
+                ? "bg-primary/15 text-primary"
+                : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            <Settings2 className="h-3.5 w-3.5" />
+            <span>Cad. Detalhado</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setCompareOpen(true)}
+            aria-label="Comparar preço"
+            disabled={!prev && !cheapest}
+            className="flex h-6 items-center gap-1 rounded-full px-1.5 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary disabled:opacity-30"
+          >
+            <Scale className="h-3.5 w-3.5" />
+            <span>Comp. de Preço</span>
+          </button>
+        </div>
+        <div className="min-w-0 flex-1">
+          {hasWarning && (
+            <p className="truncate text-[11px] font-medium text-destructive">
+              ⚠ Faltam:{" "}
+              {missingQty && missingPrice
+                ? "quantidade e valor"
+                : missingQty
+                  ? "quantidade"
+                  : "valor"}
+              . Você pode preencher depois.
+            </p>
           )}
         </div>
-      )}
+        {author && AuthorIcon && (
+          <button
+            type="button"
+            onClick={() => setAuthorOpen((v) => !v)}
+            aria-label={`Adicionado por ${author.name}`}
+            className="flex h-6 shrink-0 items-center gap-1 rounded-full px-1.5 text-[11px] font-medium text-white shadow-sm transition-all active:scale-95"
+            style={{ backgroundColor: author.color || "#3b82f6" }}
+          >
+            <AuthorIcon className="h-3.5 w-3.5" />
+            {authorOpen && <span className="px-0.5">{author.name}</span>}
+          </button>
+        )}
+      </div>
+
 
       <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
         <DialogContent className="rounded-3xl sm:max-w-sm">

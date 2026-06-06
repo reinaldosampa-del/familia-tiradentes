@@ -109,10 +109,12 @@ export function DetailedItemDialog({
     setPrice(item.price ? formatMoneyInput(String(Math.round(item.price * 100))) : "");
   }, [open, item.id]);
 
+  const [confirmBrandOpen, setConfirmBrandOpen] = useState(false);
+
   const save = useMutation({
-    mutationFn: async () => {
-      // Auto-cadastra a marca se for nova.
-      if (brand.trim()) {
+    mutationFn: async (opts?: { registerBrand?: boolean }) => {
+      // Cadastra a marca apenas quando o usuário confirmar.
+      if (opts?.registerBrand && brand.trim()) {
         const nb = normalizeName(brand);
         const exists = brands.find((b) => b.normalized === nb);
         if (!exists) {
@@ -142,9 +144,23 @@ export function DetailedItemDialog({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["items", purchaseId] });
+      setConfirmBrandOpen(false);
       onOpenChange(false);
     },
   });
+
+  const handleSaveClick = () => {
+    const trimmed = brand.trim();
+    if (trimmed) {
+      const nb = normalizeName(trimmed);
+      const exists = brands.find((b) => b.normalized === nb);
+      if (!exists) {
+        setConfirmBrandOpen(true);
+        return;
+      }
+    }
+    save.mutate(undefined);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -297,7 +313,7 @@ export function DetailedItemDialog({
             Cancelar
           </Button>
           <Button
-            onClick={() => save.mutate()}
+            onClick={handleSaveClick}
             disabled={save.isPending}
             className="flex-1 rounded-2xl"
           >
@@ -305,6 +321,35 @@ export function DetailedItemDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <Dialog open={confirmBrandOpen} onOpenChange={setConfirmBrandOpen}>
+        <DialogContent className="rounded-3xl sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Cadastrar nova marca?</DialogTitle>
+            <DialogDescription>
+              A marca <strong>{brand.trim()}</strong> não está na sua lista. Deseja
+              incluí-la no cadastro de marcas?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => save.mutate({ registerBrand: false })}
+              disabled={save.isPending}
+              className="flex-1 rounded-2xl"
+            >
+              Não, só salvar
+            </Button>
+            <Button
+              onClick={() => save.mutate({ registerBrand: true })}
+              disabled={save.isPending}
+              className="flex-1 rounded-2xl"
+            >
+              Sim, cadastrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }

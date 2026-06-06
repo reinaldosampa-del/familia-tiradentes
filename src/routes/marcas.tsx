@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Pencil, Check, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useBrands } from "@/hooks/useBrands";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,8 @@ function BrandsPage() {
   const qc = useQueryClient();
   const { data: brands = [], isLoading } = useBrands();
   const [name, setName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
 
   const add = useMutation({
     mutationFn: async () => {
@@ -46,6 +48,25 @@ function BrandsPage() {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["brands"] }),
+  });
+
+  const update = useMutation({
+    mutationFn: async ({ id, newName }: { id: string; newName: string }) => {
+      const trimmed = newName.trim();
+      if (!trimmed) return;
+      const norm = normalizeName(trimmed);
+      if (brands.some((b) => b.id !== id && b.normalized === norm)) return;
+      const { error } = await supabase
+        .from("brands")
+        .update({ name: trimmed.slice(0, 60), normalized: norm })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setEditingId(null);
+      setEditName("");
+      qc.invalidateQueries({ queryKey: ["brands"] });
+    },
   });
 
   return (

@@ -108,7 +108,9 @@ export function similar(a: string, b: string): boolean {
   const A = tokens(a);
   const B = tokens(b);
   if (A.length && B.length) {
-    return A.some((t) => B.some((u) => u === t || u.includes(t) || t.includes(u)));
+    // Match estrito: token deve ser idêntico em ambos os lados.
+    // Evita falsos positivos como "detergente" ↔ "gente".
+    return A.some((t) => B.includes(t));
   }
-  return na.includes(nb) || nb.includes(na);
+  return na === nb;
 }
