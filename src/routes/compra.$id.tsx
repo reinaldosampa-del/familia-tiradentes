@@ -918,18 +918,20 @@ function ItemRow({
   item,
   purchaseId,
   highlighted,
-  prev,
-  lastSameMarket,
-  cheapest,
+  sameBrandMarketLast,
+  anyBrandMarketCheapest,
+  sameBrandAllCheapest,
+  anyBrandAllCheapest,
   author,
   rowRef,
 }: {
   item: Item;
   purchaseId: string;
   highlighted?: boolean;
-  prev?: HistoryHit;
-  lastSameMarket?: HistoryHit;
-  cheapest?: HistoryHit;
+  sameBrandMarketLast?: HistoryHit;
+  anyBrandMarketCheapest?: HistoryHit;
+  sameBrandAllCheapest?: HistoryHit;
+  anyBrandAllCheapest?: HistoryHit;
   author?: Author;
   rowRef?: (el: HTMLLIElement | null) => void;
 }) {
