@@ -1398,3 +1398,60 @@ function ActionButton({
     </button>
   );
 }
+
+function ComparisonRow({
+  label,
+  hit,
+  tone,
+  highlight,
+}: {
+  label: string;
+  hit?: HistoryHit;
+  tone: "primary" | "success";
+  highlight?: "current-market" | "overall-cheapest";
+}) {
+  const toneClasses =
+    tone === "success"
+      ? "border-success/30 bg-success/5"
+      : "border-primary/30 bg-primary/5";
+  const labelClasses =
+    tone === "success" ? "text-success" : "text-primary";
+  const valueClasses =
+    tone === "success" ? "text-success" : "text-primary";
+  return (
+    <div className={`rounded-2xl border p-3 ${toneClasses}`}>
+      <div className="flex items-center justify-between gap-2">
+        <p className={`text-[10px] font-semibold uppercase tracking-wider ${labelClasses}`}>
+          {label}
+        </p>
+        {highlight === "current-market" && (
+          <span className="rounded-full bg-primary px-2 py-0.5 text-[9px] font-bold uppercase text-primary-foreground">
+            Mercado atual
+          </span>
+        )}
+        {highlight === "overall-cheapest" && (
+          <span className="rounded-full bg-success px-2 py-0.5 text-[9px] font-bold uppercase text-white">
+            Mais em conta
+          </span>
+        )}
+      </div>
+      {hit ? (
+        <div className="mt-1 flex items-baseline justify-between gap-3">
+          <p className={`text-lg font-bold tabular-nums ${valueClasses}`}>
+            {formatBRL(hit.price)}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            {hit.purchaseName} · {formatShortDate(hit.date)}
+          </p>
+        </div>
+      ) : (
+        <p className="mt-1 text-xs text-muted-foreground">Sem registro.</p>
+      )}
+      {hit?.brand && (
+        <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          {hit.brand}
+        </p>
+      )}
+    </div>
+  );
+}
