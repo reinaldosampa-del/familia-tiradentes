@@ -1337,8 +1337,8 @@ function ItemRow({
             <ActionButton
               icon={Scale}
               title="Comparação de preço"
-              subtitle={prev || cheapest ? "Ver histórico" : "Sem registros ainda"}
-              disabled={!prev && !cheapest}
+              subtitle={hasAnyHistory ? "Ver histórico" : "Sem registros ainda"}
+              disabled={!hasAnyHistory}
               onClick={() => {
                 setActionsOpen(false);
                 setCompareOpen(true);
