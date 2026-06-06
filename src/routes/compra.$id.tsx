@@ -1018,6 +1018,17 @@ function ItemRow({
     ],
   );
 
+  // Referência principal para o badge/borda: última compra mesma marca neste mercado.
+  const prev = sameBrandMarketLast;
+  const hasAnyHistory = !!(
+    sameBrandMarketLast ||
+    anyBrandMarketCheapest ||
+    sameBrandAllCheapest ||
+    anyBrandAllCheapest
+  );
+  // Destaques: identifica a "última do mercado atual" e a "mais em conta de todas".
+  const overallCheapest = anyBrandAllCheapest;
+  const currentMarketRef = anyBrandMarketCheapest;
   const cmp = compareTo(item.price, prev, currentNorm);
   const cmpBorder =
     cmp === "cheaper"
