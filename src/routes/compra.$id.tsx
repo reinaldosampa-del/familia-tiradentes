@@ -917,6 +917,7 @@ function EditPurchaseDialog({
 function ItemRow({
   item,
   purchaseId,
+  purchaseName,
   highlighted,
   sameBrandMarketLast,
   anyBrandMarketCheapest,
@@ -927,6 +928,7 @@ function ItemRow({
 }: {
   item: Item;
   purchaseId: string;
+  purchaseName?: string;
   highlighted?: boolean;
   sameBrandMarketLast?: HistoryHit;
   anyBrandMarketCheapest?: HistoryHit;
