@@ -1006,7 +1006,7 @@ function ItemRow({
     if (!changed) return;
     const { error } = await supabase
       .from("purchase_items")
-      .update(patch)
+      .update({ ...patch, updated_at: new Date().toISOString() })
       .eq("id", item.id);
     if (!error) qc.invalidateQueries({ queryKey: ["items", purchaseId] });
   };
