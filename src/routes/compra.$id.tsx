@@ -1085,6 +1085,25 @@ function ItemRow({
 
   const AuthorIcon = author ? getIcon(author.icon) : null;
   const isDetailed = !!item.unit_kind;
+  // Status do cadastro detalhado:
+  //   complete (verde) → marca + todos os campos do tipo preenchidos
+  //   partial  (amarelo) → algo identificado (marca ou tipo) mas faltando dados
+  //   none     (cinza) → nada identificado
+  const detailedStatus: "complete" | "partial" | "none" = (() => {
+    const hasBrand = !!(item.brand && item.brand.trim());
+    if (!isDetailed && !hasBrand) return "none";
+    if (!isDetailed) return "partial";
+    const k = item.unit_kind;
+    let fieldsOk = false;
+    if (k === "weight" || k === "volume") {
+      fieldsOk = !!(item.pack_size && item.pack_size_unit);
+    } else if (k === "unit") {
+      fieldsOk = !!item.items_per_pack;
+    } else if (k === "paper") {
+      fieldsOk = !!(item.rolls && item.width_cm && item.length_m);
+    }
+    return hasBrand && fieldsOk ? "complete" : "partial";
+  })();
 
   return (
     <li
