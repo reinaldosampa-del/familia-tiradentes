@@ -436,6 +436,7 @@ function PurchaseDetailPage() {
                     key={item.id}
                     item={item}
                     purchaseId={id}
+                    purchaseName={purchase.name}
                     highlighted={highlightId === item.id}
                     sameBrandMarketLast={m.sameBrandMarketLast}
                     anyBrandMarketCheapest={m.anyBrandMarketCheapest}
