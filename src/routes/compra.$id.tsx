@@ -52,7 +52,7 @@ import {
   parseNumber,
   similar,
 } from "@/lib/format";
-import { autoFormat, normalizedPrice, type NormalizedPrice } from "@/lib/product-parser";
+import { autoFormat, normalizedPrice, parseProduct, type NormalizedPrice } from "@/lib/product-parser";
 
 type HistoryHit = {
   price: number;
