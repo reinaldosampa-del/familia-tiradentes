@@ -978,16 +978,39 @@ function ItemRow({
   );
 
   // Auto-format on blur usando marcas conhecidas.
+  // Além de formatar o nome, já popula marca + peso/volume detectados,
+  // para que a comparação de marca e o cadastro detalhado fiquem prontos.
   const handleNameBlur = async () => {
+    const parsed = parseProduct(name, brandNames);
     const formatted = autoFormat(name, brandNames);
+    const patch: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    let changed = false;
     if (formatted && formatted !== name) {
+      patch.name = formatted;
       setName(formatted);
-      const { error } = await supabase
-        .from("purchase_items")
-        .update({ name: formatted, updated_at: new Date().toISOString() })
-        .eq("id", item.id);
-      if (!error) qc.invalidateQueries({ queryKey: ["items", purchaseId] });
+      changed = true;
     }
+    if (parsed.brand && !item.brand) {
+      patch.brand = parsed.brand;
+      changed = true;
+    }
+    if (parsed.size && parsed.sizeUnit && !item.unit_kind) {
+      const kind =
+        parsed.sizeUnit === "ml" || parsed.sizeUnit === "L" ? "volume" : "weight";
+      patch.unit_kind = kind;
+      patch.pack_size = parsed.size;
+      patch.pack_size_unit = parsed.sizeUnit;
+      patch.pack_qty = Number(item.quantity) || 1;
+      changed = true;
+    }
+    if (!changed) return;
+    const { error } = await supabase
+      .from("purchase_items")
+      .update(patch)
+      .eq("id", item.id);
+    if (!error) qc.invalidateQueries({ queryKey: ["items", purchaseId] });
   };
 
   const remove = useMutation({
