@@ -983,9 +983,7 @@ function ItemRow({
   const handleNameBlur = async () => {
     const parsed = parseProduct(name, brandNames);
     const formatted = autoFormat(name, brandNames);
-    const patch: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
+    const patch: Partial<Item> = {};
     let changed = false;
     if (formatted && formatted !== name) {
       patch.name = formatted;
