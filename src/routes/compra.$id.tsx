@@ -52,7 +52,7 @@ import {
   parseNumber,
   similar,
 } from "@/lib/format";
-import { autoFormat, normalizedPrice, type NormalizedPrice } from "@/lib/product-parser";
+import { autoFormat, normalizedPrice, parseProduct, type NormalizedPrice } from "@/lib/product-parser";
 
 type HistoryHit = {
   price: number;
@@ -978,16 +978,37 @@ function ItemRow({
   );
 
   // Auto-format on blur usando marcas conhecidas.
+  // Além de formatar o nome, já popula marca + peso/volume detectados,
+  // para que a comparação de marca e o cadastro detalhado fiquem prontos.
   const handleNameBlur = async () => {
+    const parsed = parseProduct(name, brandNames);
     const formatted = autoFormat(name, brandNames);
+    const patch: Partial<Item> = {};
+    let changed = false;
     if (formatted && formatted !== name) {
+      patch.name = formatted;
       setName(formatted);
-      const { error } = await supabase
-        .from("purchase_items")
-        .update({ name: formatted, updated_at: new Date().toISOString() })
-        .eq("id", item.id);
-      if (!error) qc.invalidateQueries({ queryKey: ["items", purchaseId] });
+      changed = true;
     }
+    if (parsed.brand && !item.brand) {
+      patch.brand = parsed.brand;
+      changed = true;
+    }
+    if (parsed.size && parsed.sizeUnit && !item.unit_kind) {
+      const kind =
+        parsed.sizeUnit === "ml" || parsed.sizeUnit === "L" ? "volume" : "weight";
+      patch.unit_kind = kind;
+      patch.pack_size = parsed.size;
+      patch.pack_size_unit = parsed.sizeUnit;
+      patch.pack_qty = Number(item.quantity) || 1;
+      changed = true;
+    }
+    if (!changed) return;
+    const { error } = await supabase
+      .from("purchase_items")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("id", item.id);
+    if (!error) qc.invalidateQueries({ queryKey: ["items", purchaseId] });
   };
 
   const remove = useMutation({
@@ -1064,6 +1085,25 @@ function ItemRow({
 
   const AuthorIcon = author ? getIcon(author.icon) : null;
   const isDetailed = !!item.unit_kind;
+  // Status do cadastro detalhado:
+  //   complete (verde) → marca + todos os campos do tipo preenchidos
+  //   partial  (amarelo) → algo identificado (marca ou tipo) mas faltando dados
+  //   none     (cinza) → nada identificado
+  const detailedStatus: "complete" | "partial" | "none" = (() => {
+    const hasBrand = !!(item.brand && item.brand.trim());
+    if (!isDetailed && !hasBrand) return "none";
+    if (!isDetailed) return "partial";
+    const k = item.unit_kind;
+    let fieldsOk = false;
+    if (k === "weight" || k === "volume") {
+      fieldsOk = !!(item.pack_size && item.pack_size_unit);
+    } else if (k === "unit") {
+      fieldsOk = !!item.items_per_pack;
+    } else if (k === "paper") {
+      fieldsOk = !!(item.rolls && item.width_cm && item.length_m);
+    }
+    return hasBrand && fieldsOk ? "complete" : "partial";
+  })();
 
   return (
     <li
@@ -1145,9 +1185,11 @@ function ItemRow({
             onClick={() => setDetailedOpen(true)}
             aria-label="Cadastro detalhado"
             className={`flex h-6 items-center gap-1 rounded-full px-1.5 text-[10px] font-semibold transition-colors ${
-              isDetailed
-                ? "bg-primary/15 text-primary"
-                : "text-muted-foreground hover:bg-muted"
+              detailedStatus === "complete"
+                ? "bg-success/15 text-success"
+                : detailedStatus === "partial"
+                  ? "bg-warning/15 text-warning"
+                  : "text-muted-foreground hover:bg-muted"
             }`}
           >
             <Settings2 className="h-3.5 w-3.5" />
