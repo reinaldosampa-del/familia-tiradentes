@@ -1185,9 +1185,11 @@ function ItemRow({
             onClick={() => setDetailedOpen(true)}
             aria-label="Cadastro detalhado"
             className={`flex h-6 items-center gap-1 rounded-full px-1.5 text-[10px] font-semibold transition-colors ${
-              isDetailed
-                ? "bg-primary/15 text-primary"
-                : "text-muted-foreground hover:bg-muted"
+              detailedStatus === "complete"
+                ? "bg-success/15 text-success"
+                : detailedStatus === "partial"
+                  ? "bg-warning/15 text-warning"
+                  : "text-muted-foreground hover:bg-muted"
             }`}
           >
             <Settings2 className="h-3.5 w-3.5" />
