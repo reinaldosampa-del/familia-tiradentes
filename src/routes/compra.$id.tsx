@@ -1277,7 +1277,7 @@ function ItemRow({
               )}
 
               <ComparisonRow
-                label="1. Mesma marca · última no mercado atual"
+                label={`1. ${(item.brand || "MESMA MARCA").toUpperCase()} · ÚLTIMA COMPRA EM ${(purchaseName || "").toUpperCase()}`}
                 hit={sameBrandMarketLast}
                 tone="primary"
                 highlight={
@@ -1289,13 +1289,13 @@ function ItemRow({
                 }
               />
               <ComparisonRow
-                label="2. Qualquer marca · mais barato no mercado atual"
+                label={`2. QUALQUER MARCA - MENOR PREÇO EM ${(purchaseName || "").toUpperCase()}`}
                 hit={anyBrandMarketCheapest}
                 tone="primary"
                 highlight="current-market"
               />
               <ComparisonRow
-                label="3. Mesma marca · mais barato em todos os mercados"
+                label={`3. ${(item.brand || "MESMA MARCA").toUpperCase()} - MENOR PREÇO EM TODOS OS OUTROS MERCADOS`}
                 hit={sameBrandAllCheapest}
                 tone="success"
                 highlight={
@@ -1307,7 +1307,7 @@ function ItemRow({
                 }
               />
               <ComparisonRow
-                label="4. Qualquer marca · mais barato em todos os mercados"
+                label="4. QUALQUER MARCA - MENOR PREÇO EM TODOS OS MERCADOS"
                 hit={anyBrandAllCheapest}
                 tone="success"
                 highlight="overall-cheapest"
